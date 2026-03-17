@@ -2,7 +2,7 @@
 
 ## Overview
 
-Classifiers categorize and label eval outputs. Unlike scorers (numeric 0-1), classifiers produce structured classification items with optional confidence and metadata. Both receive the same arguments (`output`, `expected`, `input`, `metadata`) and run in parallel during evaluations.
+Classifiers categorize and label eval outputs. Unlike scorers (numeric 0-1), classifiers produce structured classification items with optional metadata. Both receive the same arguments (`output`, `expected`, `input`, `metadata`) and run in parallel during evaluations.
 
 Classifications are stored as `Record<string, ClassificationItem[]>` -- a dictionary keyed by classifier name, where each value is an array of items. This supports multiple classifiers producing independent label sets, a single classifier producing multiple labels, and multiple classifiers contributing to the same key.
 
@@ -52,7 +52,6 @@ interface Classification {
   name: string;
   id: string;
   label?: string;
-  confidence?: number | null;
   metadata?: Record<string, unknown>;
 }
 ```
@@ -80,7 +79,7 @@ interface EvalResult {
 
 SDKs **MUST** run classifiers in parallel with scorers (e.g., `Promise.all`).
 
-Each classifier **MUST** run inside a traced span with `type: "classifier"` and `name` set to the resolved classifier name:
+Each classifier **MUST** run inside a traced span with `type: "classifier"` and `purpose: "scorer"`. The traced span name is resolved from the classifier function name (or fallback) rather than from returned classification items:
 
 ```typescript
 rootSpan.traced(
@@ -90,10 +89,10 @@ rootSpan.traced(
     return result;
   },
   {
-    name: resolvedClassifierName,
+    name: resolvedClassifierSpanName,
     span_attributes: {
-      name: resolvedClassifierName,
       type: "classifier",
+      purpose: "scorer",
     },
   },
 );
@@ -101,13 +100,12 @@ rootSpan.traced(
 
 ### Name Resolution
 
-SDKs **MUST** resolve classifier name with this precedence:
+SDKs **MUST** resolve names in two places:
 
-1. `name` field on the returned `Classification` object(s)
-2. `.name` property of the classifier function
-3. Fallback: `classifier_${index}`
+1. Classification span name: `.name` property of the classifier function, then fallback `classifier_${index}`
+2. Classification result grouping key: `name` field on each returned `Classification` object
 
-Items with the same resolved name **MUST** be appended to the same array.
+Each returned classification item **MUST** include a non-empty string `name`; items with the same returned `name` **MUST** be appended to the same array.
 
 ### Validation
 
@@ -118,7 +116,6 @@ Each classification result **MUST** have:
 If validation fails, treat the classifier as failed.
 
 Additional field rules:
-- `confidence` is an unconstrained number (no 0-1 range enforced). SDKs **MUST NOT** reject values outside 0-1.
 - `metadata` is an unconstrained `Record<string, unknown>`. SDKs **MUST NOT** impose size limits.
 - Duplicate `{name, id}` pairs are allowed. Multiple items with the same `id` under the same name key **MUST** all be stored. Deduplication, if needed, is handled at the display layer.
 - Order is stable. Items **MUST** be stored in the order they are returned by the classifier.
@@ -129,7 +126,7 @@ When storing results, SDKs **MUST** convert `Classification` to `ClassificationI
 
 1. Copy `id` as-is
 2. Default `label` to `id` if not provided
-3. Include `confidence` and `metadata` only if present
+3. Include `metadata` only if present
 4. Omit `name` (it becomes the dictionary key)
 
 ### Error Handling
@@ -149,15 +146,13 @@ This mirrors the `scorer_errors` pattern.
 
 ### ClassificationItem
 
-The storage format for a single classification. Derived from `Classification` by dropping `name` and adding an optional `source`.
+The storage format for a single classification. Derived from `Classification` by dropping `name` and defaulting `label` to `id` when omitted.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `id` | String | **REQUIRED** | Stable identifier for filtering and grouping. |
-| `label` | String | **OPTIONAL** | Display label. Defaults to `id`. |
-| `confidence` | Number \| null | **OPTIONAL** | Confidence score, typically 0-1. |
+| `label` | String | **REQUIRED** | Display label. Defaults to `id` during conversion. |
 | `metadata` | Record\<string, unknown\> | **OPTIONAL** | Arbitrary metadata. |
-| `source` | SavedFunctionId \| null | **OPTIONAL** | Function that produced this classification. Set by the platform for online scoring; SDKs MAY omit. |
 
 ### Classifications on Events
 
@@ -167,7 +162,7 @@ Stored as a top-level `classifications` field on experiment and log events. **MU
 {
   "classifications": {
     "category": [
-      { "id": "greeting", "label": "Greeting", "confidence": 0.91 }
+      { "id": "greeting", "label": "Greeting" }
     ],
     "sentiment": [
       { "id": "positive", "label": "Positive" },
@@ -198,7 +193,6 @@ Eval("my-project", {
       name: "category",
       id: "greeting",
       label: "Greeting",
-      confidence: 0.95,
     }),
   ],
 });
@@ -218,8 +212,8 @@ Eval("my-project", {
 
 ```javascript
 const sentimentClassifier = ({ output }) => [
-  { name: "sentiment", id: "positive", label: "Positive", confidence: 0.8 },
-  { name: "sentiment", id: "enthusiastic", label: "Enthusiastic", confidence: 0.6 },
+  { name: "sentiment", id: "positive", label: "Positive" },
+  { name: "sentiment", id: "enthusiastic", label: "Enthusiastic" },
 ];
 ```
 
