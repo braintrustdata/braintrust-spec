@@ -2,7 +2,6 @@ name: streaming
 type: llm_span_test
 provider: openai
 endpoint: /v1/chat/completions
-enabled_runners: ["python", "typescript", "java", "go", "ruby"]
 requests:
   - model: gpt-4o-mini
     max_tokens: 800

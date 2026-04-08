@@ -2,7 +2,6 @@ name: tools
 type: llm_span_test
 provider: openai
 endpoint: /v1/chat/completions
-enabled_runners: ["python", "typescript", "java", "ruby"]
 requests:
   - model: gpt-4o
     max_tokens: 500
