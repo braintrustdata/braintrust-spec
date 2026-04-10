@@ -563,3 +563,12 @@ Braintrust-specific OTel span attributes used by the SDK instrumentation:
 | -------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `braintrust.parent`  | string | Serialized parent span context, used to link spans across service boundaries in distributed tracing. Contains the span ID and trace ID needed to re-parent a span under a remote trace.                                                 |
 | `braintrust.metrics` | string | JSON-encoded metric annotations attached to the span. Used to pass SDK-computed metrics (e.g. `time_to_first_token`) through the OTel pipeline to the Braintrust exporter, which extracts them into the `metrics` field of the log row. |
+
+---
+
+## TODO
+
+The following areas still need to be specified:
+
+- **Embedding APIs** — instrumentation for embedding endpoints (e.g. OpenAI `embeddings.create`, Google `embedContent`), including input/output structure, token metrics, and multimodal embedding inputs (image embeddings, etc.)
+- **Multimodal APIs** — instrumentation for non-chat multimodal endpoints (image generation, speech-to-text, text-to-speech, vision-only APIs, etc.), including input/output structure and relevant metrics
