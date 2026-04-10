@@ -2,7 +2,6 @@ name: generate_content
 type: llm_span_test
 provider: google
 endpoint: /v1/models/gemini-2.5-flash:generateContent
-enabled_runners: ["python", "typescript", "java", "go"]
 requests:
   - contents:
       - role: user

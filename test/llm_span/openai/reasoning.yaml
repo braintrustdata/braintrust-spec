@@ -2,8 +2,6 @@ name: reasoning
 type: llm_span_test
 provider: openai
 endpoint: /v1/responses
-# java instrumentation doesn't support responses yet
-enabled_runners: ["python", "typescript", "java"]
 requests:
   - model: o4-mini
     reasoning:

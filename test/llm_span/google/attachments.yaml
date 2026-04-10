@@ -2,7 +2,6 @@ name: attachments
 type: llm_span_test
 provider: google
 endpoint: /v1/models/gemini-2.0-flash:generateContent
-enabled_runners: ["python", "typescript", "java", "go"]
 requests:
   - contents:
       - role: user

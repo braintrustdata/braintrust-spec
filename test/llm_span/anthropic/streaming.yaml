@@ -1,4 +1,4 @@
-name: messages
+name: streaming
 type: llm_span_test
 provider: anthropic
 endpoint: /v1/messages
@@ -9,9 +9,11 @@ requests:
     system: "You are a helpful assistant."
     messages:
       - role: user
-        content: What is the capital of France?
+        content: Count from 1 to 5.
+    stream: true
 expected_brainstore_spans:
   - metrics:
+      time_to_first_token: !fn is_non_negative_number
       tokens: !fn is_non_negative_number
       prompt_tokens: !fn is_non_negative_number
       completion_tokens: !fn is_non_negative_number
@@ -22,12 +24,12 @@ expected_brainstore_spans:
       name: anthropic.messages.create
       type: llm
     input:
-      - content: What is the capital of France?
+      - content: Count from 1 to 5.
         role: user
       - content: "You are a helpful assistant."
         role: system
     output:
       content:
-        - text: The capital of France is Paris.
+        - text: !fn is_non_empty_string
           type: text
       role: assistant

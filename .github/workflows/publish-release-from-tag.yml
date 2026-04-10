@@ -1,0 +1,81 @@
+# This workflow is triggered when a new tag is pushed to main.
+# It can also be run manually to re-publish a release in case it failed for some reason.
+name: Publish Release From Tag
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-publish:
+    name: Validate Tag and Publish Release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Determine tag
+        id: determine-tag
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG_NAME="${{ github.ref_name }}"
+          else
+            TAG_NAME="${{ inputs.tag }}"
+          fi
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "Using tag: $TAG_NAME"
+
+      - name: Validate tag format
+        run: |
+          TAG="${{ steps.determine-tag.outputs.tag }}"
+
+          if [[ ! "$TAG" =~ ^v ]]; then
+            echo "Error: Tag '$TAG' must start with 'v'"
+            exit 1
+          fi
+
+          VERSION="${TAG#v}"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Tag '$TAG' is not valid semver format (vx.y.z)"
+            exit 1
+          fi
+
+          echo "Tag '$TAG' is valid"
+
+      - name: Verify tag exists
+        run: |
+          TAG="${{ steps.determine-tag.outputs.tag }}"
+          if ! git tag -l | grep -q "^$TAG$"; then
+            echo "Error: Tag '$TAG' does not exist"
+            exit 1
+          fi
+          echo "Tag '$TAG' exists"
+
+      - name: Checkout tag
+        run: |
+          git checkout ${{ steps.determine-tag.outputs.tag }}
+
+      - name: Run tests
+        run: ./scripts/test.sh
+
+      - name: Create GitHub Release
+        run: |
+          TAG="${{ steps.determine-tag.outputs.tag }}"
+          gh release create "$TAG" \
+            --generate-notes \
+            --title "Release $TAG"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -42,11 +42,8 @@ expected_brainstore_spans:
                 type: braintrust_attachment
             type: image_url
     output:
-      - !or
-        - finish_reason: stop
-          index: 0
-          message:
-            role: assistant
-            content: !fn is_non_empty_string
-        - role: assistant
+      - finish_reason: stop
+        index: 0
+        message:
+          role: assistant
           content: !fn is_non_empty_string
