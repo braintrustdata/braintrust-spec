@@ -572,3 +572,5 @@ The following areas still need to be specified:
 
 - **Embedding APIs** — instrumentation for embedding endpoints (e.g. OpenAI `embeddings.create`, Google `embedContent`), including input/output structure, token metrics, and multimodal embedding inputs (image embeddings, etc.)
 - **Multimodal APIs** — instrumentation for non-chat multimodal endpoints (image generation, speech-to-text, text-to-speech, vision-only APIs, etc.), including input/output structure and relevant metrics
+- **Realtime APIs** — instrumentation for realtime/WebSocket-based APIs (e.g. OpenAI Realtime API), including session lifecycle, event-driven span structure, and relevant metrics
+- **Reranking APIs** — instrumentation for reranking endpoints (e.g. Cohere `rerank`, Jina Reranker), including input/output structure and relevance score metrics
