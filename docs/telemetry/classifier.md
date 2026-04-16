@@ -1,6 +1,6 @@
 # Classifiers
 
-> **Reference implementation:** [braintrust-sdk-javascript PR #1553](https://github.com/braintrustdata/braintrust-sdk-javascript/pull/1553)
+> **Reference implementation:** [braintrust-sdk-javascript PR #1553](https://github.com/braintrustdata/braintrust-sdk-javascript/pull/1553), updated by [PR #1842](https://github.com/braintrustdata/braintrust-sdk-javascript/pull/1842)
 
 ## Overview
 
@@ -135,7 +135,7 @@ Additional field rules:
 When storing results, SDKs **MUST** convert `Classification` to `ClassificationItem`:
 
 1. Copy `id` as-is
-2. Default `label` to `id` if not provided
+2. Copy `label` only if present (omit when `undefined`)
 3. Include `metadata` only if present (omit when `undefined`)
 4. Omit `name` (it becomes the dictionary key)
 
@@ -164,12 +164,12 @@ This mirrors the `scorer_errors` pattern.
 
 ### ClassificationItem
 
-The storage format for a single classification. Derived from `Classification` by dropping `name` and defaulting `label` to `id` when omitted.
+The storage format for a single classification. Derived from `Classification` by dropping `name`. `label` remains optional in the wire format.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `id` | String | **REQUIRED** | Stable identifier for filtering and grouping. |
-| `label` | String | **REQUIRED** | Display label. Defaults to `id` during conversion. |
+| `label` | String | **OPTIONAL** | Display label. Consumers **MAY** fall back to `id` when omitted. |
 | `metadata` | Record\<string, unknown\> | **OPTIONAL** | Arbitrary metadata. |
 
 ### Classifications on Events
