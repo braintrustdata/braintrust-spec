@@ -1,3 +1,4 @@
+# FIXME: These are failing on python. the attachment seems to be structured in a slightly different way compared to otel spans
 name: attachments
 type: llm_span_test
 provider: anthropic
