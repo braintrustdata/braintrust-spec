@@ -1,0 +1,40 @@
+name: attachments
+type: llm_span_test
+provider: bedrock
+endpoint: /model/{modelId}/converse
+requests:
+  - modelId: us.amazon.nova-lite-v1:0
+    messages:
+      - role: user
+        content:
+          - text: What color is this image?
+          - image:
+              format: png
+              source:
+                # 1x1 red pixel
+                bytes: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==
+expected_brainstore_spans:
+  - metrics:
+      tokens: !fn is_non_negative_number
+      prompt_tokens: !fn is_non_negative_number
+      completion_tokens: !fn is_non_negative_number
+    metadata:
+      model: us.amazon.nova-lite-v1:0
+      provider: bedrock
+    span_attributes:
+      name: bedrock.converse
+      type: llm
+    input:
+      - role: user
+        content:
+          - type: text
+            text: What color is this image?
+          - type: image
+            image:
+              format: png
+              source:
+                bytes: !fn is_non_empty_string
+    output:
+      - role: assistant
+        content:
+          - type: text

@@ -1,0 +1,31 @@
+name: converse_stream
+type: llm_span_test
+provider: bedrock
+endpoint: /model/{modelId}/converse-stream
+requests:
+  - modelId: us.amazon.nova-lite-v1:0
+    messages:
+      - role: user
+        content:
+          - text: count to 10 slowly
+expected_brainstore_spans:
+  - metrics:
+      tokens: !fn is_non_negative_number
+      prompt_tokens: !fn is_non_negative_number
+      completion_tokens: !fn is_non_negative_number
+      time_to_first_token: !fn is_non_negative_number
+    metadata:
+      model: us.amazon.nova-lite-v1:0
+      provider: bedrock
+    span_attributes:
+      name: bedrock.converse-stream
+      type: llm
+    input:
+      - role: user
+        content:
+          - type: text
+            text: count to 10 slowly
+    output:
+      - role: assistant
+        content:
+          - type: text
