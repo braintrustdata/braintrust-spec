@@ -1,0 +1,30 @@
+name: converse
+type: llm_span_test
+provider: bedrock
+endpoint: /model/{modelId}/converse
+requests:
+  - modelId: us.amazon.nova-lite-v1:0
+    messages:
+      - role: user
+        content:
+          - text: What is the capital of France?
+expected_brainstore_spans:
+  - metrics:
+      tokens: !fn is_non_negative_number
+      prompt_tokens: !fn is_non_negative_number
+      completion_tokens: !fn is_non_negative_number
+    metadata:
+      model: us.amazon.nova-lite-v1:0
+      provider: bedrock
+    span_attributes:
+      name: bedrock.converse
+      type: llm
+    input:
+      - role: user
+        content:
+          - type: text
+            text: What is the capital of France?
+    output:
+      - role: assistant
+        content:
+          - type: text
