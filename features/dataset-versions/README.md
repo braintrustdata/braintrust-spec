@@ -220,11 +220,4 @@ This means SDK authors should think of dataset versioning as more than local con
 
 | Document | Purpose |
 |----------|---------|
-| [design.md](design.md) | End-to-end flow, selector resolution, and design decisions |
 | [contracts.md](contracts.md) | Snapshot, environment-tag, and restore APIs and data shapes |
-| [validation.md](validation.md) | Test scenarios and expected behaviors |
-
-### Related specs
-
-- Environment tags / environment objects — shared environment aliasing model used by datasets and prompts
-- Remote eval dataset selection — how `dataset_version` and `dataset_environment` are passed through remote eval requests
