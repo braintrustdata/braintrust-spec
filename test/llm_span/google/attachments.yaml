@@ -1,7 +1,7 @@
 name: attachments
 type: llm_span_test
 provider: google
-endpoint: /v1/models/gemini-2.0-flash:generateContent
+endpoint: /v1/models/gemini-3.1-flash-lite-preview:generateContent
 requests:
   - contents:
       - role: user
@@ -19,12 +19,12 @@ expected_brainstore_spans:
       prompt_tokens: !fn is_non_negative_number
       completion_tokens: !fn is_non_negative_number
     metadata:
-      model: gemini-2.0-flash
+      model: gemini-3.1-flash-lite-preview
     span_attributes:
       name: generate_content
       type: llm
     input:
-      model: gemini-2.0-flash
+      model: gemini-3.1-flash-lite-preview
       contents:
         - role: user
           parts:
