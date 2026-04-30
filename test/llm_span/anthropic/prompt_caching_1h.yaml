@@ -1,0 +1,264 @@
+name: prompt_caching_1h
+type: llm_span_test
+provider: anthropic
+endpoint: /v1/messages
+# The 1h TTL breakpoint currently requires this beta header. SDKs under test
+# MUST pass the header through unchanged when the caller supplies it. See
+# docs/telemetry/prompt-cache.md.
+headers:
+  anthropic-beta: extended-cache-ttl-2025-04-11
+requests:
+  # One cache_control breakpoint with the extended 1h TTL. The cached text is
+  # a large atlas of capital cities, padded well past Claude Sonnet's minimum
+  # cacheable size (1024 tokens).
+  - model: claude-sonnet-4-5-20250929
+    temperature: 0.0
+    max_tokens: 128
+    system:
+      - type: text
+        text: |
+          Reference material (stable, cached with a 1 hour TTL):
+
+          The following is a condensed atlas of capital cities. It does
+          not change between requests within a session, which is why it
+          is cached with the longer 1 hour TTL. Consult it before
+          answering.
+
+          Europe:
+            - France: Paris
+            - Germany: Berlin
+            - Italy: Rome
+            - Spain: Madrid
+            - Portugal: Lisbon
+            - United Kingdom: London
+            - Ireland: Dublin
+            - Netherlands: Amsterdam (seat of government: The Hague)
+            - Belgium: Brussels
+            - Luxembourg: Luxembourg City
+            - Switzerland: Bern (de facto; no de jure capital)
+            - Austria: Vienna
+            - Denmark: Copenhagen
+            - Sweden: Stockholm
+            - Norway: Oslo
+            - Finland: Helsinki
+            - Iceland: Reykjavik
+            - Poland: Warsaw
+            - Czechia: Prague
+            - Slovakia: Bratislava
+            - Hungary: Budapest
+            - Romania: Bucharest
+            - Bulgaria: Sofia
+            - Greece: Athens
+            - Ukraine: Kyiv
+            - Belarus: Minsk
+            - Russia: Moscow
+            - Serbia: Belgrade
+            - Croatia: Zagreb
+            - Slovenia: Ljubljana
+            - Bosnia and Herzegovina: Sarajevo
+            - North Macedonia: Skopje
+            - Albania: Tirana
+            - Montenegro: Podgorica
+            - Estonia: Tallinn
+            - Latvia: Riga
+            - Lithuania: Vilnius
+            - Moldova: Chisinau
+            - Malta: Valletta
+
+          Asia:
+            - Japan: Tokyo
+            - China: Beijing
+            - South Korea: Seoul
+            - North Korea: Pyongyang
+            - Mongolia: Ulaanbaatar
+            - Vietnam: Hanoi
+            - Thailand: Bangkok
+            - Cambodia: Phnom Penh
+            - Laos: Vientiane
+            - Myanmar: Naypyidaw
+            - Malaysia: Kuala Lumpur
+            - Singapore: Singapore
+            - Indonesia: Jakarta (moving to Nusantara)
+            - Philippines: Manila
+            - India: New Delhi
+            - Pakistan: Islamabad
+            - Bangladesh: Dhaka
+            - Sri Lanka: Sri Jayawardenepura Kotte (commercial: Colombo)
+            - Nepal: Kathmandu
+            - Bhutan: Thimphu
+            - Afghanistan: Kabul
+            - Iran: Tehran
+            - Iraq: Baghdad
+            - Saudi Arabia: Riyadh
+            - Yemen: Sanaa
+            - Oman: Muscat
+            - United Arab Emirates: Abu Dhabi
+            - Qatar: Doha
+            - Bahrain: Manama
+            - Kuwait: Kuwait City
+            - Jordan: Amman
+            - Lebanon: Beirut
+            - Syria: Damascus
+            - Israel: Jerusalem (recognition varies)
+            - Turkey: Ankara
+            - Armenia: Yerevan
+            - Azerbaijan: Baku
+            - Georgia: Tbilisi
+            - Kazakhstan: Astana
+            - Uzbekistan: Tashkent
+            - Turkmenistan: Ashgabat
+            - Kyrgyzstan: Bishkek
+            - Tajikistan: Dushanbe
+
+          Africa:
+            - Egypt: Cairo
+            - Libya: Tripoli
+            - Tunisia: Tunis
+            - Algeria: Algiers
+            - Morocco: Rabat
+            - Sudan: Khartoum
+            - South Sudan: Juba
+            - Ethiopia: Addis Ababa
+            - Eritrea: Asmara
+            - Somalia: Mogadishu
+            - Djibouti: Djibouti
+            - Kenya: Nairobi
+            - Uganda: Kampala
+            - Rwanda: Kigali
+            - Burundi: Gitega
+            - Tanzania: Dodoma
+            - Nigeria: Abuja
+            - Ghana: Accra
+            - Ivory Coast: Yamoussoukro (de facto: Abidjan)
+            - Senegal: Dakar
+            - Mali: Bamako
+            - Cameroon: Yaounde
+            - South Africa: Pretoria (executive), Cape Town (legislative), Bloemfontein (judicial)
+            - Zimbabwe: Harare
+            - Zambia: Lusaka
+            - Angola: Luanda
+            - Mozambique: Maputo
+            - Madagascar: Antananarivo
+            - Namibia: Windhoek
+            - Botswana: Gaborone
+            - Democratic Republic of the Congo: Kinshasa
+            - Republic of the Congo: Brazzaville
+
+          Americas:
+            - United States: Washington, D.C.
+            - Canada: Ottawa
+            - Mexico: Mexico City
+            - Guatemala: Guatemala City
+            - Belize: Belmopan
+            - Honduras: Tegucigalpa
+            - El Salvador: San Salvador
+            - Nicaragua: Managua
+            - Costa Rica: San Jose
+            - Panama: Panama City
+            - Cuba: Havana
+            - Jamaica: Kingston
+            - Haiti: Port-au-Prince
+            - Dominican Republic: Santo Domingo
+            - Colombia: Bogota
+            - Venezuela: Caracas
+            - Ecuador: Quito
+            - Peru: Lima
+            - Bolivia: Sucre (constitutional), La Paz (seat of government)
+            - Chile: Santiago
+            - Argentina: Buenos Aires
+            - Uruguay: Montevideo
+            - Paraguay: Asuncion
+            - Brazil: Brasilia
+
+          Oceania:
+            - Australia: Canberra
+            - New Zealand: Wellington
+            - Fiji: Suva
+            - Papua New Guinea: Port Moresby
+            - Samoa: Apia
+            - Tonga: Nuku'alofa
+            - Vanuatu: Port Vila
+            - Solomon Islands: Honiara
+            - Micronesia: Palikir
+            - Palau: Ngerulmud
+            - Marshall Islands: Majuro
+            - Kiribati: South Tarawa
+            - Nauru: no official capital; government in Yaren District
+            - Tuvalu: Funafuti
+
+          Notes on multi-capital and disputed cases:
+
+            - Netherlands: the constitutional capital is Amsterdam but
+              the seat of government, parliament, and supreme court are
+              all in The Hague. Prefer Amsterdam unless the user asks
+              about the government specifically.
+            - South Africa: three capitals split by branch. Pretoria
+              hosts the executive, Cape Town hosts parliament, and
+              Bloemfontein hosts the supreme court of appeal. No single
+              city is "the" capital.
+            - Bolivia: Sucre is the constitutional capital, but La Paz
+              is the seat of government and the larger city. Either
+              answer is defensible; list both when asked.
+            - Ivory Coast: Yamoussoukro has been the official capital
+              since 1983, but Abidjan remains the economic hub and de
+              facto administrative center for most purposes.
+            - Sri Lanka: Sri Jayawardenepura Kotte is the legislative
+              capital. Colombo is the commercial capital and by far the
+              more commonly referenced city.
+            - Switzerland: Bern is the de facto capital (the seat of
+              the federal authorities), but Swiss law does not
+              designate any city as "the capital".
+            - Nauru: has no designated capital. Government offices are
+              in the Yaren District, which is often listed as the
+              capital by convention.
+            - Israel: Jerusalem is the declared capital, but
+              international recognition of that status is not
+              universal. Many embassies are in Tel Aviv.
+            - Palestine: de jure capital is East Jerusalem; de facto
+              administrative center is Ramallah. Both appear in
+              official usage.
+            - Taiwan: Taipei is the capital of the Republic of China.
+              Recognition as a sovereign state varies by country.
+            - Kosovo: Pristina is the capital of the Republic of
+              Kosovo. Recognition as a sovereign state varies by
+              country.
+            - Somaliland: Hargeisa is the capital of the self-declared
+              Republic of Somaliland, which is not widely recognized.
+              Somalia, which claims the territory, has its capital at
+              Mogadishu.
+
+          End of reference material.
+        cache_control:
+          type: ephemeral
+          ttl: 1h
+    messages:
+      - role: user
+        content: What is the capital of France?
+expected_brainstore_spans:
+  - metrics:
+      # Standard LLM metrics still apply.
+      tokens: !fn is_non_negative_number
+      prompt_tokens: !fn is_non_negative_number
+      completion_tokens: !fn is_non_negative_number
+      # Aggregate cache metrics. `prompt_cache_creation_tokens` is the
+      # Anthropic `cache_creation_input_tokens` total; the 1h value is a
+      # breakdown of that same total, not tokens in addition to it.
+      #
+      # The creation metrics use `is_positive_number` because a successful
+      # prompt-caching call MUST actually write cache entries; 0 would mean
+      # the cache_control breakpoint did not round-trip to the provider.
+      # `prompt_cached_tokens` stays non-negative: on a cold cache it is 0.
+      prompt_cached_tokens: !fn is_non_negative_number
+      prompt_cache_creation_tokens: !fn is_positive_number
+      prompt_cache_creation_1h_tokens: !fn is_positive_number
+    metadata:
+      model: claude-sonnet-4-5-20250929
+      provider: anthropic
+    span_attributes:
+      name: anthropic.messages.create
+      type: llm
+    output:
+      content:
+        - text: !fn is_non_empty_string
+          type: text
+      role: assistant
