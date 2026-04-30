@@ -1,5 +1,10 @@
 name: prompt_caching_1h
 type: llm_span_test
+variables:
+  # injected into sys prompt to guarantee cache misses
+  # NOTE: this will not bust record+replay modes because vcr cassettes match by request body
+  client: !gen test_runner_client
+  vcr-nonce: !gen vcr_nonce
 provider: anthropic
 endpoint: /v1/messages
 # The 1h TTL breakpoint currently requires this beta header. SDKs under test
@@ -17,6 +22,7 @@ requests:
     system:
       - type: text
         text: |
+          [cache buster: {{client}} {{vcr-nonce}}]
           Reference material (stable, cached with a 1 hour TTL):
 
           The following is a condensed atlas of capital cities. It does

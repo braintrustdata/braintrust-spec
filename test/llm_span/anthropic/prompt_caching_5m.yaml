@@ -1,5 +1,10 @@
 name: prompt_caching_5m
 type: llm_span_test
+variables:
+  # injected into sys prompt to guarantee cache misses
+  # NOTE: this will not bust record+replay modes because vcr cassettes match by request body
+  client: !gen test_runner_client
+  vcr-nonce: !gen vcr_nonce
 provider: anthropic
 endpoint: /v1/messages
 # The default 5m TTL does not require any beta header. See
@@ -14,6 +19,7 @@ requests:
     system:
       - type: text
         text: |
+          [cache buster: {{client}} {{vcr-nonce}}]
           You are a helpful assistant answering questions about world
           geography. Follow the operating guidelines below on every
           response. These guidelines are refreshed frequently, so they
