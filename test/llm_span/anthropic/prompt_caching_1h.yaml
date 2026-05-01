@@ -9,7 +9,7 @@ provider: anthropic
 endpoint: /v1/messages
 # The 1h TTL breakpoint currently requires this beta header. SDKs under test
 # MUST pass the header through unchanged when the caller supplies it. See
-# docs/telemetry/prompt-cache.md.
+# docs/features/prompt-cache.md.
 headers:
   anthropic-beta: extended-cache-ttl-2025-04-11
 requests:
