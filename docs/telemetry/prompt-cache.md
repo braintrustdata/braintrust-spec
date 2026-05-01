@@ -73,13 +73,22 @@ If both an aggregate and a per-TTL breakdown are available from the provider, th
 
 Braintrust's cost pipeline is tolerant of all SDK shapes: aggregate only, breakdown only, or both aggregate and breakdown. SDKs should still prefer a single representation, and Anthropic spans must send only one representation.
 
-When the breakdown is present, cache-write cost is billed per bucket using the per-TTL rates. When the breakdown is absent, cost falls back to the legacy single-rate calculation against `prompt_cache_creation_tokens`. If both representations are present, the server uses an effective-creation-tokens rule to avoid double-counting:
+Server cost logic computes effective creation tokens with a `max(...)` rule so both representations can be present without double-counting:
 
 ```
 effective_creation_tokens =
   max(prompt_cache_creation_tokens,
       prompt_cache_creation_5m_tokens + prompt_cache_creation_1h_tokens)
 ```
+
+Cache-write cost is billed per bucket using per-TTL rates only when both split rates are available and the split token sum covers the aggregate total:
+
+```
+prompt_cache_creation_5m_tokens + prompt_cache_creation_1h_tokens
+  >= prompt_cache_creation_tokens
+```
+
+Otherwise, cost falls back to the legacy single-rate calculation against `effective_creation_tokens`. This preserves compatibility for aggregate-only spans and for mixed spans where the split does not account for the full aggregate total.
 
 Consequences for SDK implementors:
 
