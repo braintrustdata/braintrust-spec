@@ -149,7 +149,8 @@ expected_brainstore_spans:
       # the cache_control breakpoint did not round-trip to the provider.
       # `prompt_cached_tokens` stays non-negative: on a cold cache it is 0.
       prompt_cached_tokens: !fn is_non_negative_number
-      prompt_cache_creation_tokens: !fn is_positive_number
+      # anthropic cache tokens only send 5m or 1h variants
+      prompt_cache_creation_tokens: !fn undefined_or_null
       prompt_cache_creation_5m_tokens: !fn is_positive_number
     metadata:
       model: claude-sonnet-4-5-20250929
