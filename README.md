@@ -4,6 +4,7 @@ Cross language specs for implementing a Braintrust SDK.
 
 Contains:
 
-- markdown files describing complex features
-- yaml describing end-to-end tests and assertions
-- yaml describing cross-language constants (envars, string attributes)
+- `docs/` — markdown specs and guidance
+  - `docs/features/` — feature-specific specs, designs, and API contracts
+- `test/` — yaml end-to-end test cases and assertions
+- `semconv/` — yaml cross-language constants such as envars and span attributes

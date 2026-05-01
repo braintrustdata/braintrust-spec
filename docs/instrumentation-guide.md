@@ -98,7 +98,7 @@ SDKs MAY define span names for additional providers as they are added.
 
 ### Attribute namespacing
 
-Braintrust SDK spans use the following attribute prefixes (see also the [AI span filtering spec](../feature/filter-ai-spans.md)):
+Braintrust SDK spans use the following attribute prefixes (see also the [AI span filtering spec](features/filter-ai-spans.md)):
 
 | Prefix        | Source                     |
 | ------------- | -------------------------- |

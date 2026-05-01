@@ -8,7 +8,7 @@ variables:
 provider: anthropic
 endpoint: /v1/messages
 # The default 5m TTL does not require any beta header. See
-# docs/telemetry/prompt-cache.md for the 1h TTL variant, which does.
+# docs/features/prompt-cache.md for the 1h TTL variant, which does.
 requests:
   # One cache_control breakpoint with the default 5m TTL. The cached text is
   # padded past Claude Sonnet's minimum cacheable size (1024 tokens; roughly
