@@ -10,7 +10,7 @@
 
 Anthropic's prompt caching lets callers mark portions of a prompt with `cache_control` so those tokens are cached on the provider side and re-used across requests. Cached reads are billed at roughly 10% of the base input rate, and cache writes are billed above the base input rate, with the **write rate depending on the TTL** of the cache entry (5 minutes vs. 1 hour).
 
-Because the two TTL tiers have different prices, Braintrust SDKs **MUST** surface the 5m/1h breakdown as separate metrics so that downstream cost tooling can attribute spend correctly.
+Because the two TTL tiers have different prices, Braintrust SDKs **MUST** surface Anthropic cache writes using the 5m/1h breakdown so that downstream cost tooling can attribute spend correctly. In general, SDKs **SHOULD** emit either the aggregate `prompt_cache_creation_tokens` metric or the TTL-specific creation metrics, not both. Anthropic spans **MUST** use a single representation.
 
 ---
 
@@ -27,7 +27,7 @@ The nested `cache_creation` usage object is **only emitted by recent Anthropic S
 - **Python (`anthropic`):** the nested `usage.cache_creation` object with `ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens` is returned by SDK versions that track the `2024-10-22` Messages API revision and newer. Older SDKs return only the flat `cache_creation_input_tokens` field.
 - **TypeScript (`@anthropic-ai/sdk`):** same story — recent releases expose `usage.cache_creation`; older ones do not.
 
-SDK implementations **MUST** treat the nested field as optional. A missing `cache_creation` object is normal on older Anthropic SDK versions and **MUST NOT** be an error. In that case the SDK **MUST** still emit `prompt_cache_creation_tokens` from the flat field and **MUST NOT** fabricate a 5m/1h split.
+SDK implementations **MUST** treat the nested field as optional. A missing `cache_creation` object is normal on older Anthropic SDK versions and **MUST NOT** be an error. In that case the SDK **MAY** emit `prompt_cache_creation_tokens` from the flat field and **MUST NOT** fabricate a 5m/1h split. When the nested per-TTL fields are available, Anthropic spans **MUST** emit the per-TTL metrics instead of the aggregate metric.
 
 ### 1-hour TTL beta
 
@@ -39,58 +39,63 @@ SDK implementations **MUST** treat the nested field as optional. A missing `cach
 
 SDKs **MUST** emit the following span metrics. All are optional — omit any metric whose source field is absent from the Anthropic response.
 
-| Braintrust metric                 | Source on `message.usage`                      | Notes                            |
-| --------------------------------- | ---------------------------------------------- | -------------------------------- |
-| `prompt_cached_tokens`            | `cache_read_input_tokens`                      | Cache reads                      |
-| `prompt_cache_creation_tokens`    | `cache_creation_input_tokens`                  | Total cache writes, all TTLs     |
-| `prompt_cache_creation_5m_tokens` | `cache_creation.ephemeral_5m_input_tokens`     | 5-minute-TTL writes only         |
-| `prompt_cache_creation_1h_tokens` | `cache_creation.ephemeral_1h_input_tokens`     | 1-hour-TTL writes only           |
+| Braintrust metric                 | Source on `message.usage`                      | Notes                                      |
+| --------------------------------- | ---------------------------------------------- | ------------------------------------------ |
+| `prompt_cached_tokens`            | `cache_read_input_tokens`                      | Cache reads                                |
+| `prompt_cache_creation_5m_tokens` | `cache_creation.ephemeral_5m_input_tokens`     | 5-minute-TTL writes only                   |
+| `prompt_cache_creation_1h_tokens` | `cache_creation.ephemeral_1h_input_tokens`     | 1-hour-TTL writes only                     |
+| `prompt_cache_creation_tokens`    | `cache_creation_input_tokens`                  | Legacy aggregate; emit only when no split is available |
 
 ### Totals
 
 Anthropic's `input_tokens` field **excludes** cache-read and cache-creation tokens. SDKs **MUST** roll those back in when finalizing `prompt_tokens` and `tokens`:
 
 ```
-prompt_tokens = input_tokens + cache_read_input_tokens + cache_creation_input_tokens
+prompt_tokens = input_tokens + cache_read_input_tokens + effective_cache_creation_tokens
 tokens        = prompt_tokens + completion_tokens
+
+where:
+
+effective_cache_creation_tokens =
+  cache_creation_input_tokens, when only the aggregate is emitted
+  otherwise ephemeral_5m_input_tokens + ephemeral_1h_input_tokens
 ```
 
-The split metrics are a **breakdown** of the total, not additional tokens. SDKs **MUST NOT** add `prompt_cache_creation_5m_tokens` + `prompt_cache_creation_1h_tokens` into `prompt_tokens` or `tokens` on top of `prompt_cache_creation_tokens` — the TTL-tagged tokens are already counted inside `cache_creation_input_tokens`.
+The split metrics are an alternative representation of cache creation tokens, not additional tokens. SDKs **MUST NOT** add `prompt_cache_creation_5m_tokens` + `prompt_cache_creation_1h_tokens` into `prompt_tokens` or `tokens` on top of `prompt_cache_creation_tokens`.
 
-Emitting all three metrics in the same event (total + 5m + 1h) is **expected and safe**. See [Server-side cost computation](#server-side-cost-computation) below for how Braintrust handles the three-way relationship.
+SDKs **SHOULD** emit a single representation in each span: either the aggregate `prompt_cache_creation_tokens` metric or the TTL-specific `prompt_cache_creation_5m_tokens` / `prompt_cache_creation_1h_tokens` metrics. For Anthropic responses that include the nested `cache_creation` breakdown, SDKs **MUST** emit the TTL-specific metrics and leave `prompt_cache_creation_tokens` unset.
 
 ### Consistency
 
-When both the total and the breakdown are present, the following invariant **SHOULD** hold:
-
-```
-prompt_cache_creation_5m_tokens + prompt_cache_creation_1h_tokens
-  == prompt_cache_creation_tokens
-```
-
-Anthropic's `cache_creation_input_tokens` is defined as the sum of the per-TTL buckets, so equality is the normal case. If Anthropic returns inconsistent values, the SDK **MUST** pass them through unchanged. Correctness of this invariant is the provider's responsibility, not the SDK's.
+If both an aggregate and a per-TTL breakdown are available from the provider, the SDK **MUST** choose one representation for the Braintrust span. For Anthropic, prefer the per-TTL breakdown whenever it is present. If the breakdown is absent, emitting the aggregate is acceptable.
 
 ### Server-side cost computation
 
-Braintrust's cost pipeline is tolerant of all three SDK shapes — total only, breakdown only, or both — using an effective-creation-tokens rule:
+Braintrust's cost pipeline is tolerant of all SDK shapes: aggregate only, breakdown only, or both aggregate and breakdown. SDKs should still prefer a single representation, and Anthropic spans must send only one representation.
+
+Server cost logic computes effective creation tokens with a `max(...)` rule so both representations can be present without double-counting:
 
 ```
 effective_creation_tokens =
   max(prompt_cache_creation_tokens,
       prompt_cache_creation_5m_tokens + prompt_cache_creation_1h_tokens)
-
-uncached_prompt_tokens =
-  prompt_tokens - prompt_cached_tokens - effective_creation_tokens
 ```
 
-Cache-write cost is then billed per bucket when the breakdown is present (using per-TTL rates with fallback to the legacy single cache-write rate), and falls back to the legacy single-rate calculation against `prompt_cache_creation_tokens` when the breakdown is absent.
+Cache-write cost is billed per bucket using per-TTL rates only when both split rates are available and the split token sum covers the aggregate total:
+
+```
+prompt_cache_creation_5m_tokens + prompt_cache_creation_1h_tokens
+  >= prompt_cache_creation_tokens
+```
+
+Otherwise, cost falls back to the legacy single-rate calculation against `effective_creation_tokens`. This preserves compatibility for aggregate-only spans and for mixed spans where the split does not account for the full aggregate total.
 
 Consequences for SDK implementors:
 
-- Emit whatever the provider actually returns; do not synthesize missing fields beyond reconstructing `prompt_cache_creation_tokens` from `5m + 1h` when Anthropic only returned the breakdown.
-- Do not drop the total when the breakdown is present. Older Braintrust backends only understand `prompt_cache_creation_tokens`, so keeping the total guarantees correct legacy-path cost tracking.
-- Do not drop the breakdown when the total is present. Newer backends use the breakdown for per-TTL pricing.
-- The `max(...)` rule means the server will not double-count if an SDK accidentally emits `5m + 1h != total`.
+- Emit the TTL-specific metrics for Anthropic when `usage.cache_creation` is present.
+- For Anthropic, emit `prompt_cache_creation_tokens` only when no per-TTL breakdown is available.
+- Do not synthesize missing per-TTL fields from the aggregate.
+- Prefer not to emit the aggregate and per-TTL metrics together in the same span, even though the server can tolerate both.
 
 ---
 
@@ -105,7 +110,6 @@ Consequences for SDK implementors:
     "completion_tokens": 42,
     "tokens": 2142,
     "prompt_cached_tokens": 0,
-    "prompt_cache_creation_tokens": 2042,
     "prompt_cache_creation_5m_tokens": 1042,
     "prompt_cache_creation_1h_tokens": 1000
   }
