@@ -21,7 +21,7 @@ expected_brainstore_spans:
       model: claude-haiku-4-5-20251001
       provider: anthropic
     span_attributes:
-      name: anthropic.messages.create
+      name: anthropic.messages.stream
       type: llm
     input:
       - content: Count from 1 to 5.
