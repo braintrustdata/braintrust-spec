@@ -15,12 +15,12 @@ expected_brainstore_spans:
       prompt_tokens: !fn is_non_negative_number
       completion_tokens: !fn is_non_negative_number
     metadata:
-      model: gemini-3.1-flash-lite-preview
+      model: !starts_with gemini-3.1-flash-lite
     span_attributes:
       name: generate_content
       type: llm
     input:
-      model: gemini-3.1-flash-lite-preview
+      model: !starts_with gemini-3.1-flash-lite
       contents:
         - role: user
           parts:
