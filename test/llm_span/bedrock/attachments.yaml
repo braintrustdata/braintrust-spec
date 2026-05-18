@@ -33,7 +33,11 @@ expected_brainstore_spans:
             image:
               format: png
               source:
-                bytes: !fn is_non_empty_string
+                bytes:
+                  type: braintrust_attachment
+                  content_type: image/png
+                  filename: !fn is_non_empty_string
+                  key: !fn is_non_empty_string
     output:
       - role: assistant
         content:
