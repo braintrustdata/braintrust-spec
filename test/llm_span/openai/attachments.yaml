@@ -3,7 +3,7 @@ type: llm_span_test
 provider: openai
 endpoint: /v1/chat/completions
 requests:
-  - model: gpt-4o-mini
+  - model: gpt-4o
     temperature: 0.0
     messages:
       - role: system
@@ -11,18 +11,23 @@ requests:
       - role: user
         content:
         - type: text
-          text: What color is this image?
+          text: Briefly describe these attachments
         - type: image_url
           image_url:
             # 1x1 red pixel
             url: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==
+        - type: file
+          file:
+            filename: blank.pdf
+            # single blank page PDF
+            file_data: data:application/pdf;base64,JVBERi0xLjAKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSA+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDQgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjE5MAolJUVPRgo=
 expected_brainstore_spans:
   - metrics:
       tokens: !fn is_non_negative_number
       prompt_tokens: !fn is_non_negative_number
       completion_tokens: !fn is_non_negative_number
     metadata:
-      model: !starts_with "gpt-4o-mini"
+      model: !starts_with "gpt-4o"
       provider: openai
     span_attributes:
       name: Chat Completion
@@ -32,7 +37,7 @@ expected_brainstore_spans:
         content: you are a helpful assistant
       - role: user
         content:
-          - text: What color is this image?
+          - text: Briefly describe these attachments
             type: text
           - image_url:
               url:
@@ -41,6 +46,14 @@ expected_brainstore_spans:
                 key: !fn is_non_empty_string
                 type: braintrust_attachment
             type: image_url
+          - file:
+              filename: !fn is_non_empty_string
+              file_data:
+                content_type: application/pdf
+                filename: !fn is_non_empty_string
+                key: !fn is_non_empty_string
+                type: braintrust_attachment
+            type: file
     output:
       - finish_reason: stop
         index: 0
