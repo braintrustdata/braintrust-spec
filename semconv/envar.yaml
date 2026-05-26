@@ -3,7 +3,11 @@ description: Canonical environment variable spec for Braintrust SDKs
 config_envars:
   - name: BRAINTRUST_API_KEY
     required: true
-    documentation: API key for authentication with Braintrust.
+    documentation: >-
+      API key for authentication with Braintrust. Missing, empty, or
+      whitespace-only process environment values are treated as unset.
+      Filesystem-capable SDKs then fall back to the nearest .env.braintrust file
+      as specified in docs/features/env-braintrust.md.
 
   - name: BRAINTRUST_APP_URL
     required: false
