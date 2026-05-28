@@ -43,6 +43,14 @@ The attachment replacement process should be designed so that:
 - Adding support for a new vendor or attachment type is a matter of adding one entry, not modifying shared logic.
 - Tests should be structured so that adding a new format without corresponding test data causes a test failure.
 
+Cap the tree-walk recursion at a reasonable depth (e.g. 128) so that pathological deeply-nested input cannot exhaust the stack or otherwise wedge processing. When the cap is hit, return the subtree unchanged.
+
+#### partial-replacement safety
+
+A single span may contain multiple attachments, and the uploader can reject some of them (queue full, uploader shut down due to a prior failure). The walk must not leave the span in a mixed state where some attachments are replaced with references and others are still inline base64 — that produces references whose data never gets uploaded, which is data loss.
+
+If any enqueue call fails during the walk, abort the rewrite and return the original JSON unchanged. The backend can handle inline base64; partial replacements are unrecoverable.
+
 After replacement, the base64 data is replaced with an attachment reference object:
 
 ```json
@@ -108,7 +116,7 @@ Response:
 }
 ```
 
-The `org_id` is resolved by calling the login endpoint (`POST {api_url}/api/apikey/login`) and extracting the first org from the response. Cache the org ID for the lifetime of the uploader.
+The `org_id` is resolved by calling the login endpoint (`POST {api_url}/api/apikey/login`) and extracting the first org from the response. Cache the org ID for the lifetime of the uploader, and ensure the resolution itself is single-flight so concurrent uploads don't each hit the login endpoint.
 
 #### 2. Upload data to the signed URL
 
@@ -152,11 +160,15 @@ All HTTP requests in the upload flow should use exponential backoff with retry o
 
 ### error handling
 
-The attachment replacement is an optimization, not a hard requirement. The Braintrust backend can handle raw base64 data in spans. If anything goes wrong during processing or upload:
+The attachment replacement is an optimization, not a hard requirement. The Braintrust backend can handle raw base64 data in spans. The error policy depends on the kind of error:
 
-- Return the original unmodified JSON so the span is sent with inline base64 data.
-- Shut down the uploader so subsequent spans skip attachment processing entirely rather than repeatedly failing.
-- Do not throw exceptions that would prevent the span from being exported.
+- **Per-span errors** (malformed JSON in `braintrust.input_json`/`braintrust.output_json`, decoder failures on a single value, etc.): silently skip that span and return its original JSON unchanged. Do not shut down the uploader. The heuristic can match on non-LLM spans whose attributes happen to look like base64, and those should not poison the processor for everyone else.
+- **Upload-pipeline errors** (signed-URL request fails, signed-URL upload fails after retries, login/org-id resolution fails, worker thread crashes unexpectedly): shut down the uploader so subsequent spans skip attachment processing entirely rather than repeatedly failing. Subsequent spans are exported with inline base64.
+- In either case, do not throw exceptions that would prevent the span from being exported.
+
+Log a warning when the uploader shuts itself down due to an upload-pipeline error so operators can observe the fallback to inline base64.
+
+Once the uploader has shut down, any spans already exported with attachment references whose uploads did not complete will refer to missing storage objects. This is an accepted trade-off — partial-replacement safety (see [replacement](#replacement)) only guarantees consistency within a single span's walk, not across spans.
 
 ### otel SDK impl
 
@@ -184,6 +196,21 @@ The actual S3 uploads must not block the app thread. Use a background worker wit
 - `forceFlush(timeout)` blocks until all currently-enqueued uploads complete (or timeout). This is used during shutdown to ensure uploads finish before the process exits.
 - On upload failure, set a flag that causes subsequent `enqueue` calls to return `false`. The processor detects this and falls back to sending raw base64 data. Continue draining remaining jobs in the queue before stopping.
 - If the language supports it, register a shutdown hook so pending uploads complete on process exit. Use a generous timeout (e.g. 120s) since dropping uploads is a bad user experience.
+
+The retry-backoff sleeps inside the upload pipeline must be cancellable by shutdown — otherwise an uploader stuck in exponential backoff can block process exit for tens of seconds past the user's deadline.
+
+Wrap each upload job in a try/catch (or language equivalent) so that an unexpected exception in the upload code does not kill the worker permanently. Treat such crashes as upload failures: account for the job, log, and shut down the uploader.
+
+#### Shutdown sequencing
+
+When the span processor is shut down or flushed:
+
+1. Flush/shutdown the wrapped span exporter first so that all buffered spans (which may contain attachment references) reach the collector.
+2. Then drain or shut down the attachment uploader so that the referenced binary data is available in object storage when the collector processes the spans.
+
+If the caller provides a deadline (e.g. a graceful-shutdown budget), the total wait must honor it rather than blocking for the uploader's internal 120s ceiling. If the uploader cannot finish within the caller's deadline, abandon the wait and let the worker continue in the background until the process exits — but never block the caller past their deadline.
+
+`shutdown()` on the uploader must be idempotent (safe to call multiple times). The error-handling policy already produces double-shutdown call paths (uploader self-shutdown on failure + explicit shutdown on process exit).
 
 #### Configuration
 
