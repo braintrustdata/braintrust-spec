@@ -112,7 +112,7 @@ For a baseline implementation, supporting `"data"` type (generic values) is suff
 
 ### Evaluator parameters are optional
 
-Evaluators that don't define parameters continue to work as before. The `parameters` field in both `GET /list` and `POST /eval` is optional. An evaluator without parameters responds to `GET /list` with `"parameters": null` (or omits the field).
+Evaluators that don't define parameters continue to work as before. The `parameters` field is optional in both `GET /list` and `POST /eval`. In the `GET /list` response, an evaluator without parameters must **omit** the `parameters` field entirely (the Playground validates it against an optional, not nullable, schema, so `"parameters": null` fails parsing). In the `POST /eval` request, the client may send `"parameters": null`, `{}`, or omit it — all mean "no overrides".
 
 ## Process Flow
 

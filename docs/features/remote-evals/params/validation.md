@@ -21,7 +21,7 @@ This document describes the scenarios and behaviors that an implementation must 
 - Each declared parameter appears in the `"schema"` subfield with its `"default"` and `"description"` preserved
 - Parameter names match what was declared in the evaluator definition
 
-### 1.2 Evaluator Without Parameters Returns Null
+### 1.2 Evaluator Without Parameters Omits the Field
 
 **Purpose**: Confirm evaluators that define no parameters don't break the `/list` response.
 
@@ -31,7 +31,8 @@ This document describes the scenarios and behaviors that an implementation must 
 
 **Expected**:
 - Response is `200 OK`
-- The evaluator's entry has `"parameters": null` or omits the field entirely
+- The evaluator's entry **omits** the `"parameters"` field entirely
+- The entry must **not** contain `"parameters": null` — the Playground validates this field against an optional (not nullable) schema, so a literal `null` fails parsing and rejects the whole response
 
 ### 1.3 Mixed Evaluators in Same `/list` Response
 
@@ -44,7 +45,7 @@ This document describes the scenarios and behaviors that an implementation must 
 **Expected**:
 - All evaluators appear in the response
 - Parameter-enabled evaluators have valid `ParametersContainer` structures
-- Parameter-free evaluators have `null` or omitted `parameters`
+- Parameter-free evaluators omit the `parameters` field (not `null`)
 
 ---
 

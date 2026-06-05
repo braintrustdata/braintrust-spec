@@ -61,7 +61,7 @@ HTTP 200 OK
 Content-Type: application/json
 ```
 
-Body: a JSON object keyed by evaluator name. For each evaluator, the `parameters` field contains a `parameters` object serialized from the evaluator's `parameters` definition, or `null` if the evaluator defines no parameters.
+Body: a JSON object keyed by evaluator name. For each evaluator, the `parameters` field contains a `parameters` object serialized from the evaluator's `parameters` definition. When the evaluator defines no parameters, the field must be **omitted entirely** — do not emit `"parameters": null`.
 
 ```json
 {
@@ -87,8 +87,7 @@ Body: a JSON object keyed by evaluator name. For each evaluator, the `parameters
     }
   },
   "text-summarizer": {
-    "scores": [],
-    "parameters": null
+    "scores": []
   }
 }
 ```
@@ -101,7 +100,7 @@ Body: a JSON object keyed by evaluator name. For each evaluator, the `parameters
 | `schema` | `Record<string, parameter>` | Map of parameter name to definition |
 | `source` | `null` | Always `null` for static parameters. Non-null values reference remotely-stored parameter definitions — out of scope for baseline. |
 
-When the evaluator defines no parameters, set `"parameters": null` or omit the field.
+When the evaluator defines no parameters, **omit the `parameters` field entirely**. Do not emit `"parameters": null`: the Playground validates each evaluator's `parameters` against an optional (not nullable) zod schema (`serializedParametersContainerSchema.optional()`), so a literal `null` fails parsing and causes the Playground to reject the entire `/list` response with "Failed to parse evaluator list".
 
 > **Note for existing SDK implementors**: Prior to the introduction of the container format, some SDKs returned the `schema` map directly (i.e. `Record<string, parameter>`) rather than wrapping it in a `parameters` object with `type` and `source` fields. The container was introduced to distinguish static (inline) parameters from dynamic (remotely-stored) ones. If updating an existing SDK, check whether it predates this format and update accordingly.
 
