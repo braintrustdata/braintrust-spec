@@ -125,6 +125,7 @@ When returning structured classifier results, each classification must be a non-
 ```
 
 Additional field rules:
+
 - `name` defaults to the classifier function's resolved span name when missing/empty (see Name Resolution above).
 - `metadata` is an unconstrained `Record<string, unknown>`. SDKs **MUST NOT** impose size limits.
 - Duplicate `{name, id}` pairs are allowed. Multiple items with the same `id` under the same name key **MUST** all be stored. Deduplication, if needed, is handled at the display layer.
@@ -152,6 +153,7 @@ rootSpan.log({ classifications });
 Classifier failures **MUST NOT** abort the evaluation or affect other classifiers/scorers.
 
 On failure:
+
 1. Record the error under `classifier_errors` in eval metadata (maps classifier name to error message/stack)
 2. Log the error to the root span's metadata
 3. **SHOULD** emit a debug warning
@@ -166,11 +168,11 @@ This mirrors the `scorer_errors` pattern.
 
 The storage format for a single classification. Derived from `Classification` by dropping `name`. `label` remains optional in the wire format.
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `id` | String | **REQUIRED** | Stable identifier for filtering and grouping. |
-| `label` | String | **OPTIONAL** | Display label. Consumers **MAY** fall back to `id` when omitted. |
-| `metadata` | Record\<string, unknown\> | **OPTIONAL** | Arbitrary metadata. |
+| Field      | Type                      | Required     | Description                                                      |
+| ---------- | ------------------------- | ------------ | ---------------------------------------------------------------- |
+| `id`       | String                    | **REQUIRED** | Stable identifier for filtering and grouping.                    |
+| `label`    | String                    | **OPTIONAL** | Display label. Consumers **MAY** fall back to `id` when omitted. |
+| `metadata` | Record\<string, unknown\> | **OPTIONAL** | Arbitrary metadata.                                              |
 
 ### Classifications on Events
 
@@ -179,9 +181,7 @@ Stored as a top-level `classifications` field on experiment and log events. **MU
 ```json
 {
   "classifications": {
-    "category": [
-      { "id": "greeting", "label": "Greeting" }
-    ],
+    "category": [{ "id": "greeting", "label": "Greeting" }],
     "sentiment": [
       { "id": "positive", "label": "Positive" },
       { "id": "enthusiastic", "label": "Enthusiastic" }
@@ -189,6 +189,39 @@ Stored as a top-level `classifications` field on experiment and log events. **MU
   }
 }
 ```
+
+---
+
+## Function Push
+
+Classifiers that are saved and pushed as project-level functions **MUST** use the same function registration path as scorers, tools, prompts, and other saved functions. SDKs **MUST NOT** emit pushed classifiers through a separate top-level `classifiers` registry.
+
+For code-backed classifiers:
+
+1. The function manifest entry **MUST** be a normal code function entry.
+2. The persisted function row **MUST** set `function_type` to `"classifier"`.
+3. The persisted function row **MUST** set `function_data.type` to `"code"`.
+4. The function body, bundle metadata, runtime context, schema, tags, metadata, and `if_exists` behavior **MUST** follow the same rules as other pushed code functions.
+
+```json
+{
+  "name": "Category classifier",
+  "slug": "category-classifier",
+  "function_type": "classifier",
+  "function_data": {
+    "type": "code",
+    "data": {
+      "type": "bundle",
+      "runtime_context": {
+        "runtime": "node"
+      },
+      "bundle_id": "bundle-id"
+    }
+  }
+}
+```
+
+Eval-local classifier arrays remain part of the evaluator API described above. They are used for running classifiers during an eval and producing the `classifications` event field. They are distinct from saved function push registries. When an SDK provides a project-level classifier API for function push, it **MUST** register the classifier in the SDK's normal saved function registry with classifier function type metadata.
 
 ---
 
