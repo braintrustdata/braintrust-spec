@@ -19,6 +19,12 @@ expected_brainstore_spans:
     span_attributes:
       name: generate_content
       type: llm
+    context:
+      sdk:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+      instrumentation:
+        name: !fn is_non_empty_string
     input:
       model: !starts_with gemini-3.1-flash-lite
       contents:

@@ -31,7 +31,7 @@ Each span is stored as a Braintrust log row. The backend accepts the following f
 | `scores`          | object (string → number 0-1) | Named scoring metrics                                                |
 | `error`           | any                          | Error data if the span failed                                        |
 | `tags`            | array of strings             | Labels for categorization                                            |
-| `context`         | object                       | Code location (caller_functionname, caller_filename, caller_lineno)  |
+| `context`         | object                       | Code location and SDK/instrumentation provenance                     |
 
 Note: `input` and `output` are **free-form JSON** — the backend does not enforce any structure on them. The conventions described in this guide are SDK-level standards for how instrumentation should populate these fields.
 
@@ -75,6 +75,40 @@ The `metrics` field is an object of string keys to numeric values. The backend a
 | `tokens`            | Total token count (LLM spans)             |
 
 Additional metrics (e.g. `time_to_first_token`, `completion_reasoning_tokens`) are added as needed — the backend accepts arbitrary numeric keys.
+
+### Context
+
+The `context` field is an object containing textual information about the code and libraries that produced the span. SDKs MUST preserve the existing caller-location fields when available; caller-location fields are optional because not every runtime or instrumentation path can determine them.
+
+| Field                  | Type            | Description                                                                 |
+| ---------------------- | --------------- | --------------------------------------------------------------------------- |
+| `caller_functionname`  | string optional | Function or method that created the span                                    |
+| `caller_filename`      | string optional | File where the span was created                                             |
+| `caller_lineno`        | number optional | Line number where the span was created                                      |
+| `sdk.name`             | string optional | SDK package or exporter name that emitted or exported the span              |
+| `sdk.version`          | string optional | SDK package or exporter version                                             |
+| `instrumentation.name` | string optional | Stable module, package, plugin, or OTel instrumentation scope name          |
+
+Braintrust-created spans MUST also include SDK and instrumentation provenance. Omit fields whose values are unknown.
+
+```json
+{
+  "caller_functionname": "main",
+  "caller_filename": "app.py",
+  "caller_lineno": 42,
+  "sdk": {
+    "name": "braintrust.javascript",
+    "version": "1.2.3"
+  },
+  "instrumentation": {
+    "name": "openai-auto"
+  }
+}
+```
+
+`context.sdk` identifies the SDK package and version that emitted or exported the span. For external OTLP spans that do not include Braintrust SDK provenance, ingestion SHOULD fall back to OTel `telemetry.sdk.name` and `telemetry.sdk.version` resource attributes.
+
+`context.instrumentation.name` identifies the stable module, package, plugin, or OTel instrumentation scope that directly created the span. Provider/client SDKs such as `openai` or `anthropic` are not the canonical SDK and SHOULD continue to appear in `metadata.provider` when provider metadata is available.
 
 ---
 
@@ -820,7 +854,7 @@ SDKs MAY add additional numeric metrics beyond this list.
 
 ## Span Attributes Reference
 
-Braintrust-specific OTel span attributes used by the SDK instrumentation. These are the keys read by the Braintrust ingestion pipeline when consuming OTel spans.
+Braintrust-specific OTel attributes used by the SDK instrumentation. These are the keys read by the Braintrust ingestion pipeline when consuming OTel spans.
 
 ### Routing and context
 
@@ -831,6 +865,18 @@ Braintrust-specific OTel span attributes used by the SDK instrumentation. These 
 | `braintrust.app_url`  | string | The Braintrust app URL associated with the span, used by the ingestion endpoint to disambiguate environments (e.g. production vs staging).                                            |
 
 `braintrust.parent`, `braintrust.org`, and `braintrust.app_url` are treated as *system* attributes by the SDK's AI-span filter — their presence alone does not mark a span as AI-related.
+
+### SDK provenance
+
+| Attribute                         | Type   | Location       | Description                                                                                                                                      |
+| --------------------------------- | ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `braintrust.context_json`         | string | Span attribute | JSON-encoded context object. Extracted into the `context` field of the log row and deep-merged with backend-derived OTel provenance.             |
+| `braintrust.sdk.name`             | string | Resource attr  | Braintrust SDK package/exporter name that emitted or exported the span. Extracted into `context.sdk.name`.                                        |
+| `braintrust.sdk.version`          | string | Resource attr  | Braintrust SDK package/exporter version. Extracted into `context.sdk.version`.                                                                    |
+
+When `braintrust.sdk.*` resource attributes are present, ingestion MUST populate `context.sdk.name` and `context.sdk.version` from them. Otherwise, ingestion SHOULD derive `context.sdk.name` and `context.sdk.version` from OTel `telemetry.sdk.name` and `telemetry.sdk.version` resource attributes.
+
+OTLP ingestion SHOULD derive `context.instrumentation.name` from the OTLP instrumentation scope name.
 
 ### Span content
 

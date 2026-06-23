@@ -114,6 +114,12 @@ expected_brainstore_spans:
     span_attributes:
       name: Chat Completion
       type: llm
+    context:
+      sdk:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+      instrumentation:
+        name: !fn is_non_empty_string
     input:
       - role: user
         content: What is the capital of France?
@@ -343,6 +349,15 @@ validate_value(actual, expected, path):
   else (scalar):
     assert actual == expected
 ```
+
+### Context provenance
+
+Every expected LLM span asserts SDK provenance in `context`:
+
+- `context.sdk.name` and `context.sdk.version` MUST be non-empty strings.
+- `context.instrumentation.name` MUST identify the stable instrumentation module, package, plugin, or OTel instrumentation scope that created the span.
+
+SDKs MAY include additional context fields, including caller-location fields; recursive validation ignores extra keys.
 
 **Single-item list vs object special case**: when `expected` is a list of one element that is a dict, and `actual` is a dict (not a list), validate `actual` against `expected[0]`.  This handles providers like Anthropic that return an object for `output` instead of a list of choices.
 
