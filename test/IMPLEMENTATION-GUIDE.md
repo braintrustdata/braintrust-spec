@@ -226,15 +226,19 @@ try (var stream = client.chat().completions().createStreaming(params)) {
 }
 ```
 
-### Attachment handling (inline base64 images)
+### Attachment handling (inline base64 media)
 
-Some specs pass a `data:image/png;base64,...` URL in a message content part.  Your SDK's instrumentation should convert this to a `braintrust_attachment` reference in the logged span rather than logging the raw base64 blob.  The expected span structure in the spec reflects the converted form.
+Some specs pass inline media such as `data:image/png;base64,...` URLs or provider-native base64 fields in message content. Your SDK's instrumentation should convert these values to `braintrust_attachment` references in the logged span rather than logging raw base64 blobs. The expected span structure in the spec reflects the converted form.
 
-**OpenAI** (`image_url.url`): the instrumentation replaces the data URL with `{type: braintrust_attachment, content_type, filename, key}`.
+**OpenAI** (`image_url.url`, `file.file_data`): the instrumentation replaces data URLs with `{type: braintrust_attachment, content_type, filename, key}`.
 
-**Anthropic** (`source.data` in an image block): the instrumentation replaces the `source` field with `{type: braintrust_attachment, content_type, filename, key}`.
+**Anthropic** (`source.data` in image/document blocks): the instrumentation replaces the `source` field with `{type: braintrust_attachment, content_type, filename, key}`.
 
-If your SDK does not yet perform this conversion, the `attachments` specs will fail.  That is expected and is a good signal that the SDK needs this feature.
+**Google/Gemini** (`inline_data` / `inlineData`): image MIME types become `image_url.url` attachment parts; non-image MIME types such as PDF, audio, and video become `file.file_data` attachment parts.
+
+**Bedrock Converse** (`source.bytes` in image/document/audio/video blocks): the instrumentation preserves the provider-native block and replaces `source.bytes` with `{type: braintrust_attachment, content_type, filename, key}`.
+
+If your SDK does not yet perform this conversion, the `attachments` specs will fail. That is expected and is a good signal that the SDK needs this feature.
 
 ---
 

@@ -7,9 +7,9 @@ Often, attachments come in two variants:
 - references to an external file (e.g. a link to a png on a server)
 - an inline base64 encoded string (e.g. a png in its base64 representation)
 
-inline images are mostly passed through to braintrust and rendered by the UI
+External references are usually passed through to braintrust and rendered by the UI.
 
-Base64 images are processed specially by braintrust:
+Base64 media is processed specially by braintrust:
 
 - if the braintrust backend detects a base64 attachment:
     - the attachment is uploaded to the braintrust cloud storage provider (which is often s3)
@@ -66,6 +66,10 @@ These are implementation notes for things that are easy to get wrong. Each vendo
 
 Data URIs (`data:<mime>;base64,<data>`) appear as text node values. Only replace when the **entire** text value is a data URI — if the data URI is embedded in a larger string (e.g. `"Check this: data:image/png;base64,... please"`), do **not** replace it. A good heuristic for "entirely a data URI": the trimmed value starts with `data:` and contains no quotes, backslashes, or spaces.
 
+OpenAI-style content parts place image data under `image_url.url`, file data under `file.file_data`, and audio input data under `input_audio.data`. Replace the raw media leaf with the attachment reference and preserve sibling metadata such as filename, format, or MIME type.
+
+Generated-image output items may contain base64 image data in result fields such as `image_generation_call.result`. Replace the raw result leaf with the attachment reference and preserve compact sibling metadata.
+
 #### Bedrock (Converse API)
 
 Bedrock wraps attachments in a parent block with a type key (`image`, `document`, `video`, `audio`) containing `{"format": "<ext>", "source": {"bytes": "<base64>"}}`. The same `format` string (e.g. `mp4`) can appear in different block types and must resolve to different MIME types (`video/mp4` vs `audio/mp4`). Use the parent block type key to select the correct format-to-MIME mapping. Do not use a single flat format-to-MIME table.
@@ -76,9 +80,9 @@ Anthropic encodes inline attachments as `{"type": "base64", "media_type": "<mime
 
 #### Gemini
 
-Gemini uses `{"inlineData": {"mimeType": "<mime>", "data": "<base64>"}}`. The replacement depends on content type:
-- **Images** (`image/*`): replace `inlineData` with `image_url: {url: <ref>}`
-- **Non-images**: replace `inlineData` with `file: {file_data: <ref>}`
+Gemini uses `{"inlineData": {"mimeType": "<mime>", "data": "<base64>"}}` or the snake_case equivalent `{"inline_data": {"mime_type": "<mime>", "data": "<base64>"}}`. The replacement depends on content type:
+- **Images** (`image/*`): replace `inlineData`/`inline_data` with `image_url: {url: <ref>}`
+- **Non-images**: replace `inlineData`/`inline_data` with `file: {file_data: <ref>}`
 
 ### upload flow
 
@@ -190,4 +194,5 @@ The actual S3 uploads must not block the app thread. Use a background worker wit
 Provide a config flag to disable attachment processing entirely (e.g. `BRAINTRUST_AUTO_CONVERT_AI_ATTACHMENTS=false`). When disabled, the span processor skips the scan and passes spans through unmodified. The default should be `true`.
 
 ### native SDK impl
-TODO: the author of this doc is not sure how native SDKs do this so we'll fill this out later
+
+Native SDKs should follow the canonical placement and provider mapping rules in [Multimodal / Attachments](../instrumentation-guide.md#multimodal--attachments). This document covers the shared conversion and upload mechanics.

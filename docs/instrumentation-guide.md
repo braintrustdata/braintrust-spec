@@ -717,38 +717,139 @@ When a multi-turn conversation includes prior reasoning output, the full context
 
 ## Multimodal / Attachments
 
-When inputs contain non-text content (images, audio, etc.), the SDK MUST handle them as Braintrust attachments.
+When an instrumented request or response contains inline binary media (images, PDFs, audio, video, etc.), SDKs MUST replace the raw media with Braintrust attachment references inside the log row's `input` or `output` payload. Do not add a separate attachment list. The lower-level scan, upload, retry, and fallback behavior is specified in [Attachments](features/attachments.md).
 
-### Image inputs
+Attachment conversion is both a storage optimization and a display requirement. When conversion succeeds, raw media bytes MUST NOT remain inline in `input` or `output`. If conversion or upload fails, instrumentation MUST preserve the original payload and MUST NOT throw an exception that prevents span export.
 
-Inline image data (base64-encoded or data URIs) MUST be converted to Braintrust attachment references:
+### What SDKs must emit
+
+Generate the same `input` and `output` payloads the SDK would normally log, but replace each inline media leaf with a `braintrust_attachment` object.
+
+For a multimodal chat input, the replacement is local to the media field:
+
+```diff
+ {
+   "role": "user",
+   "content": [
+     { "type": "text", "text": "Briefly describe these attachments" },
+     {
+       "type": "image_url",
+       "image_url": {
+-        "url": "data:image/png;base64,<base64>"
++        "url": {
++          "type": "braintrust_attachment",
++          "content_type": "image/png",
++          "filename": "attachment.png",
++          "key": "<attachment uuid>"
++        }
+       }
+     },
+     {
+       "type": "file",
+       "file": {
+         "filename": "blank.pdf",
+-        "file_data": "data:application/pdf;base64,<base64>"
++        "file_data": {
++          "type": "braintrust_attachment",
++          "content_type": "application/pdf",
++          "filename": "blank.pdf",
++          "key": "<attachment uuid>"
++        }
+       }
+     }
+   ]
+ }
+```
+
+For OTel instrumentation, write these same JSON values as strings on the OTel span:
+
+```js
+span.setAttribute("braintrust.input_json", JSON.stringify(input));
+span.setAttribute("braintrust.output_json", JSON.stringify(output));
+```
+
+After ingestion, Braintrust decodes those attributes into the row's `input` and `output` fields. Native Braintrust logging APIs should send the same JSON values directly as `input` and `output`.
+
+Do not generate `braintrust.attachments`, `metadata.attachments`, or a top-level `attachments` field. The attachment reference belongs at the exact field that formerly contained the data URL, base64 string, bytes, buffer, or provider SDK file object.
+
+### Attachment reference
+
+The canonical replacement object is:
 
 ```json
 {
-  "type": "image_url",
-  "image_url": {
-    "url": {
-      "type": "braintrust_attachment",
-      "content_type": "image/png",
-      "filename": "<generated>",
-      "key": "<storage key>"
-    }
-  }
+  "type": "braintrust_attachment",
+  "content_type": "image/png",
+  "filename": "attachment.png",
+  "key": "<attachment uuid>"
 }
 ```
-
-The original raw image bytes MUST NOT be stored inline in the span. Instead, the SDK uploads the image data and replaces the inline content with an attachment reference containing:
 
 | Field          | Description                               |
 | -------------- | ----------------------------------------- |
 | `type`         | Always `"braintrust_attachment"`          |
 | `content_type` | MIME type of the attachment               |
-| `filename`     | Generated filename (non-empty string)     |
-| `key`          | Storage key for retrieving the attachment |
+| `filename`     | Generated or provider-supplied filename   |
+| `key`          | Usually a UUID v4 string identifying the uploaded bytes |
 
-### Google-specific
+`filename`, `content_type`, and `key` MUST be non-empty strings. In current Braintrust SDKs and backend auto-conversion, `key` is generated as a UUID v4 string for each attachment. New SDKs SHOULD use the same convention. It is not a URL, filename, provider file ID, or content hash. Braintrust uses this id to derive the actual object-store path, so the `braintrust_attachment` reference should contain only the UUID-like id, not the full storage path. Use the same `key` when requesting the signed upload URL, uploading the bytes, reporting upload status, and writing the reference into `input` or `output`; treat it as opaque after it is generated.
 
-Google uses `inline_data` with `mime_type` and `data` fields. The SDK MUST convert these to the same `braintrust_attachment` reference format within the `parts` array, under an `image_url.url` wrapper.
+Existing `external_attachment` and `inline_attachment` objects are valid Braintrust attachment forms and SHOULD be preserved when a provider or Braintrust API already supplies them. Remote media URLs SHOULD be logged as URLs or external references; instrumentation MUST NOT fetch arbitrary remote URLs solely to create an attachment.
+
+SDK instrumentation SHOULD convert inline media to `braintrust_attachment` references before exporting the span. Backend conversion of known raw base64 formats is a fallback for older SDKs and unexpected payloads, not the preferred implementation path.
+
+### Input payloads
+
+SDKs MUST recursively scan provider request inputs and convert inline media in all message/content containers that the provider accepts. Convert these forms when the MIME type is known or can be inferred:
+
+- Data URL strings such as `data:image/png;base64,...`
+- Raw base64 strings whose surrounding provider field supplies a MIME type
+- Bytes, buffers, array buffers, typed arrays, file-like objects, or local file/path objects exposed by the provider SDK wrapper
+
+When instrumentation cannot determine a valid MIME type or cannot decode the value, it MUST leave the original value unchanged.
+
+For normalized content parts that are not constrained to a provider-native shape, place attachments inside the message/content payload, not in `metadata`:
+
+| Media type | Logged content part |
+| ---------- | ------------------- |
+| Images (`image/*`) | `{ "type": "image_url", "image_url": { "url": <braintrust_attachment> } }` |
+| PDFs, documents, audio, video, and other files | `{ "type": "file", "file": { "filename": "<filename>", "file_data": <braintrust_attachment> } }` |
+
+Preserve provider-supplied filenames when available.
+
+If a provider-native payload has a dedicated Braintrust UI normalizer, instrumentation MAY preserve that provider-native structure and replace only the raw media leaf with a `braintrust_attachment`. Otherwise, instrumentation SHOULD emit the normalized `image_url` or `file` content parts above. Provider-unsupported media should still be represented in the logged attempted input. Instrumentation MUST NOT rewrite a provider request into a different provider-supported shape to hide an error from the underlying API.
+
+### Output payloads
+
+The same attachment rules apply to generated media in `output`. Generated media MUST be logged in the `output` payload, not in `metadata`. If the provider response already has an output item or content part containing inline media, preserve that provider response structure and replace only the binary leaf with a `braintrust_attachment`. If there is no provider-native structure to preserve, use the same normalized `image_url` and `file` content part shapes used for inputs.
+
+- Chat audio outputs: attach binary audio data, preserve compact transcript/text fields, and record audio metadata such as MIME type, byte size, and audio token metrics when the provider reports them.
+- Image generation and image edit outputs: convert returned base64 image data from provider-specific result fields to image attachments. Preserve provider status, prompt/revised prompt, model, and other compact metadata.
+- Speech-to-text and OCR: log input media or documents as attachments. Log transcripts, pages, detected text, and structured extraction results as text/JSON. Attach any large returned page images or media artifacts.
+- Text-to-speech: log input text as normal request input and log generated audio as an attachment.
+- Video generation and other long-running media operations: when the wrapper waits or polls for completion, log the initial request and final media result on the `llm` span. If the wrapper only starts an operation, log the provider operation ID/status and any best-effort metadata available at return time.
+
+### Streaming multimodal outputs
+
+Streaming instrumentation MUST aggregate media chunks into the final `output` rather than dropping them or logging raw chunks as separate opaque blobs. The final span output SHOULD contain the same attachment-normalized shape as a non-streaming response.
+
+- Inline media output parts MUST be accumulated and converted to image or file attachments.
+- Streaming audio chunks SHOULD be aggregated into transcript/audio output. If binary audio data is retained, it MUST be converted to an attachment.
+- `time_to_first_token` and other streaming metrics remain computed from the stream timing even when final media attachment conversion happens at the end of the stream.
+
+### Multimodal API surfaces
+
+These API families SHOULD follow the same attachment rules even when they are not chat/message APIs. SDK support may be phased in over time; this table defines the desired instrumentation shape without prescribing provider-specific APIs.
+
+| API family | Span shape |
+| ---------- | ---------- |
+| Image generation / editing | One `llm` span per model execution. Input prompt/reference images are logged in `input`; generated images are attachments in `output`. |
+| Video generation | One `llm` span for the operation observed by the wrapper. Inputs and final video artifacts use attachments; operation IDs/status remain in metadata or output. |
+| Audio transcription / speech generation | Speech-to-text attaches input audio and logs transcript output. Text-to-speech logs text input and attaches generated audio output. |
+| OCR / document understanding | Attach input documents/images and log extracted text/structured page data as JSON. |
+| Multimodal embeddings | For now, only track token metrics when the provider reports them. Detailed multimodal embedding payload conventions are still a separate TODO. |
+| Realtime / live APIs | Use a parent `task` span for the session with child spans for model turns, media exchanges, and tool calls. Detailed event lifecycle conventions are still a separate TODO. |
+| Prediction-style model runner APIs | Log provider-native input/output JSON, converting any media fields with inline bytes/base64/data URLs into attachments. |
 
 ---
 
@@ -811,6 +912,9 @@ The `metrics` object accepts arbitrary numeric keys. The following are standard 
 | `completion_reasoning_tokens`  | number | Reasoning models | MUST\*   | Tokens used for chain-of-thought reasoning |
 | `prompt_cached_tokens`         | number | Cached responses | SHOULD   | Tokens read from provider cache            |
 | `prompt_cache_creation_tokens` | number | Cached responses | SHOULD   | Tokens written to provider cache           |
+| `prompt_audio_tokens`          | number | Audio models     | SHOULD   | Input audio tokens reported by provider    |
+| `completion_audio_tokens`      | number | Audio models     | SHOULD   | Output audio tokens reported by provider   |
+| `completion_image_tokens`      | number | Image models     | SHOULD   | Output image tokens reported by provider   |
 
 \* MUST be captured when the provider reports it; not all providers/models support reasoning tokens.
 
@@ -867,7 +971,6 @@ For backward compatibility, the ingestion pipeline also accepts the non-`_json` 
 
 The following areas still need to be specified:
 
-- **Embedding APIs** — instrumentation for embedding endpoints (e.g. OpenAI `embeddings.create`, Google `embedContent`), including input/output structure, token metrics, and multimodal embedding inputs (image embeddings, etc.)
-- **Multimodal APIs** — instrumentation for non-chat multimodal endpoints (image generation, speech-to-text, text-to-speech, vision-only APIs, etc.), including input/output structure and relevant metrics
-- **Realtime APIs** — instrumentation for realtime/WebSocket-based APIs (e.g. OpenAI Realtime API), including session lifecycle, event-driven span structure, and relevant metrics
+- **Embedding APIs** — instrumentation for embedding endpoints (e.g. OpenAI `embeddings.create`, Google `embedContent`), including input/output structure, token metrics
+- **Realtime APIs** — detailed instrumentation for realtime/WebSocket-based APIs (e.g. OpenAI Realtime API), including event lifecycle, session finalization, and interruption/cancellation behavior
 - **Reranking APIs** — instrumentation for reranking endpoints (e.g. Cohere `rerank`, Jina Reranker), including input/output structure and relevance score metrics
