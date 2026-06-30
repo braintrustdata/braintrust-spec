@@ -32,6 +32,12 @@ expected_brainstore_spans:
     span_attributes:
       name: Chat Completion
       type: llm
+    context:
+      span_origin:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
     input:
       - role: system
         content: you are a helpful assistant

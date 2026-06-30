@@ -2,10 +2,16 @@ description: names and docs for span attributes special to Braintrust
 
 span_attributes:
   - name: braintrust.parent
-    documentation: todo
+    documentation: Serialized parent reference used to attach the span to a Braintrust project, experiment, dataset, prompt session, or parent span.
+  - name: braintrust.context_json
+    documentation: JSON-encoded context object extracted into the Braintrust row context field. Used for caller location and span-origin provenance.
+  - name: braintrust.sdk.name
+    documentation: Braintrust SDK package or exporter name that emitted or exported the span. Intended for OTel resource attributes and extracted into context.span_origin.name.
+  - name: braintrust.sdk.version
+    documentation: Braintrust SDK package or exporter version. Intended for OTel resource attributes and extracted into context.span_origin.version.
   - name: braintrust.metrics
-    documentation: todo
+    documentation: JSON-encoded metric annotations extracted into the Braintrust row metrics field.
 
 braintrust_metrics:
   - name: time_to_first_token
-    documentation: todo
+    documentation: Seconds from request start to first streamed token or chunk.
