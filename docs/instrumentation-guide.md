@@ -72,7 +72,7 @@ Spans form a tree (technically a DAG) within a trace:
 
 ### Metrics
 
-The `metrics` field is an object of string keys to numeric values. Instrumentation MUST only emit metric fields explicitly listed in this guide even though the backend accepts arbitrary numeric keys. Standard fields:
+The `metrics` field is an object of string keys to numeric values. Instrumentation MUST only emit metric fields explicitly listed in this guide even though the backend accepts arbitrary numeric keys. Standard LLM token and cost field semantics are specified in [Token and cost metrics](features/token-and-cost-metrics.md). Standard fields:
 
 | Field                 | Description                                                                          |
 | --------------------- | ------------------------------------------------------------------------------------ |
@@ -81,7 +81,7 @@ The `metrics` field is an object of string keys to numeric values. Instrumentati
 | `prompt_tokens`       | Input/prompt token count (LLM spans)                                                 |
 | `completion_tokens`   | Output/completion token count (LLM spans)                                            |
 | `tokens`              | Total token count (LLM spans)                                                        |
-| `time_to_first_token` | Time until first _generated_ (meaning model generated) byte arrives on the client in |
+| `time_to_first_token` | Seconds from request start to the first generated token or chunk                     |
 
 ### Context
 
@@ -622,12 +622,12 @@ Instrumentation MUST merge `metadata.prompt` with other span metadata such as `p
 
 Every LLM span MUST include:
 
-| Field      | Description                                 | Example                  |
-| ---------- | ------------------------------------------- | ------------------------ |
-| `model`    | The model identifier as returned by the API | `gpt-4o-mini-2024-07-18` |
-| `provider` | The provider name                           | `openai`                 |
+| Field      | Description                                                          | Example                  |
+| ---------- | -------------------------------------------------------------------- | ------------------------ |
+| `model`    | The resolved model identifier as returned by the API                 | `gpt-4o-mini-2024-07-18` |
+| `provider` | The provider, gateway, or reseller whose pricing applies to the call | `openai`                 |
 
-The `model` field SHOULD use the model string from the API response (which may include a version suffix) rather than the string the user passed in the request.
+The `model` field SHOULD use the model string from the API response (which may include a version suffix) rather than the string the user passed in the request. The `provider` field is required even when model names are globally recognizable, because gateways and resellers can price the same model differently.
 
 Instrumentation MAY include only the following LLM request configuration fields in metadata when they are present and JSON-serializable: `temperature`, `top_p`, `max_tokens`, `frequency_penalty`, `presence_penalty`, `stop`, and `response_format`.
 
@@ -970,22 +970,25 @@ Instrument calls through the Vercel AI SDK's `generateText`, `streamText`, and r
 
 ## Metrics Reference
 
-Instrumentation MUST only emit the metric keys listed in this guide. The following are standard metrics that instrumentation SHOULD populate:
+Instrumentation MUST only emit the metric keys listed in this guide. The following are standard metrics that instrumentation SHOULD populate. See [Token and cost metrics](features/token-and-cost-metrics.md) for full semantics, completeness requirements, and cost formulas.
 
-| Metric                         | Type   | Applies to       | Required | Description                                |
-| ------------------------------ | ------ | ---------------- | -------- | ------------------------------------------ |
-| `start`                        | number | All spans        | MUST     | Unix timestamp when the span started       |
-| `end`                          | number | All spans        | MUST     | Unix timestamp when the span ended         |
-| `tokens`                       | number | All LLM spans    | MUST     | Total tokens (prompt + completion)         |
-| `prompt_tokens`                | number | All LLM spans    | MUST     | Input / prompt tokens                      |
-| `completion_tokens`            | number | All LLM spans    | MUST     | Output / completion tokens                 |
-| `time_to_first_token`          | number | Streaming spans  | MUST     | Seconds from request start to first chunk  |
-| `completion_reasoning_tokens`  | number | Reasoning models | MUST\*   | Tokens used for chain-of-thought reasoning |
-| `prompt_cached_tokens`         | number | Cached responses | SHOULD   | Tokens read from provider cache            |
-| `prompt_cache_creation_tokens` | number | Cached responses | SHOULD   | Tokens written to provider cache           |
-| `prompt_audio_tokens`          | number | Audio models     | SHOULD   | Input audio tokens reported by provider    |
-| `completion_audio_tokens`      | number | Audio models     | SHOULD   | Output audio tokens reported by provider   |
-| `completion_image_tokens`      | number | Image models     | SHOULD   | Output image tokens reported by provider   |
+| Metric                            | Type   | Applies to       | Required | Description                                      |
+| --------------------------------- | ------ | ---------------- | -------- | ------------------------------------------------ |
+| `start`                           | number | All spans        | MUST     | Unix timestamp when the span started             |
+| `end`                             | number | All spans        | MUST     | Unix timestamp when the span ended               |
+| `tokens`                          | number | All LLM spans    | MUST     | Total tokens (prompt + completion)               |
+| `prompt_tokens`                   | number | All LLM spans    | MUST     | Input / prompt tokens                            |
+| `completion_tokens`               | number | All LLM spans    | MUST     | Output / completion tokens                       |
+| `time_to_first_token`             | number | Streaming spans  | MUST     | Seconds from request start to first chunk        |
+| `completion_reasoning_tokens`     | number | Reasoning models | MUST\*   | Tokens used for model reasoning                  |
+| `prompt_cached_tokens`            | number | Cached responses | SHOULD   | Tokens read from provider cache                  |
+| `prompt_cache_creation_tokens`    | number | Cached responses | SHOULD   | Tokens written to provider cache                 |
+| `prompt_cache_creation_5m_tokens` | number | Cached responses | SHOULD   | Cache-write tokens for 5-minute TTL entries      |
+| `prompt_cache_creation_1h_tokens` | number | Cached responses | SHOULD   | Cache-write tokens for 1-hour TTL entries        |
+| `prompt_audio_tokens`             | number | Audio models     | SHOULD   | Input audio tokens reported by provider          |
+| `completion_audio_tokens`         | number | Audio models     | SHOULD   | Output audio tokens reported by provider         |
+| `completion_image_tokens`         | number | Image models     | SHOULD   | Output image tokens reported by provider         |
+| `estimated_cost`                  | number | LLM spans        | MAY      | Explicit per-span total estimated cost in dollars |
 
 \* MUST be captured when the provider reports it; not all providers/models support reasoning tokens.
 
