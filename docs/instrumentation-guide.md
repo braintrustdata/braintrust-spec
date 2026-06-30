@@ -64,7 +64,7 @@ Spans form a tree (technically a DAG) within a trace:
 
 ### Metrics
 
-The `metrics` field is an object of string keys to numeric values. The backend accepts any numeric key-value pair. Standard fields:
+The `metrics` field is an object of string keys to numeric values. The backend accepts any numeric key-value pair. Standard LLM token and cost fields are specified in [Token and cost metrics](features/token-and-cost-metrics.md).
 
 | Field               | Description                               |
 | ------------------- | ----------------------------------------- |
@@ -74,7 +74,7 @@ The `metrics` field is an object of string keys to numeric values. The backend a
 | `completion_tokens` | Output/completion token count (LLM spans) |
 | `tokens`            | Total token count (LLM spans)             |
 
-Additional metrics (e.g. `time_to_first_token`, `completion_reasoning_tokens`) are added as needed — the backend accepts arbitrary numeric keys.
+Additional metrics (e.g. `time_to_first_token`, `completion_reasoning_tokens`, cache-token metrics, and `estimated_cost`) are added as needed. SDKs MUST use the canonical Braintrust metric names from the token and cost metrics spec when emitting Braintrust-native spans.
 
 ---
 
@@ -555,12 +555,12 @@ Some providers offer built-in tools that are not user-defined functions (e.g. An
 
 Every LLM span MUST include:
 
-| Field      | Description                                 | Example                  |
-| ---------- | ------------------------------------------- | ------------------------ |
-| `model`    | The model identifier as returned by the API | `gpt-4o-mini-2024-07-18` |
-| `provider` | The provider name                           | `openai`                 |
+| Field      | Description                                                          | Example                  |
+| ---------- | -------------------------------------------------------------------- | ------------------------ |
+| `model`    | The resolved model identifier as returned by the API                 | `gpt-4o-mini-2024-07-18` |
+| `provider` | The provider, gateway, or reseller whose pricing applies to the call | `openai`                 |
 
-The `model` field SHOULD use the model string from the API response (which may include a version suffix) rather than the string the user passed in the request.
+The `model` field SHOULD use the model string from the API response (which may include a version suffix) rather than the string the user passed in the request. The `provider` field is required even when model names are globally recognizable, because gateways and resellers can price the same model differently.
 
 ### Metrics
 
@@ -798,19 +798,22 @@ Instrument calls through the Vercel AI SDK's `generateText`, `streamText`, and r
 
 ## Metrics Reference
 
-The `metrics` object accepts arbitrary numeric keys. The following are standard metrics that instrumentation SHOULD populate:
+The `metrics` object accepts arbitrary numeric keys. The following are standard metrics that instrumentation SHOULD populate. See [Token and cost metrics](features/token-and-cost-metrics.md) for full semantics, completeness requirements, and cost formulas.
 
-| Metric                         | Type   | Applies to       | Required | Description                                |
-| ------------------------------ | ------ | ---------------- | -------- | ------------------------------------------ |
-| `start`                        | number | All spans        | MUST     | Unix timestamp when the span started       |
-| `end`                          | number | All spans        | MUST     | Unix timestamp when the span ended         |
-| `tokens`                       | number | All LLM spans    | MUST     | Total tokens (prompt + completion)         |
-| `prompt_tokens`                | number | All LLM spans    | MUST     | Input / prompt tokens                      |
-| `completion_tokens`            | number | All LLM spans    | MUST     | Output / completion tokens                 |
-| `time_to_first_token`          | number | Streaming spans  | MUST     | Seconds from request start to first chunk  |
-| `completion_reasoning_tokens`  | number | Reasoning models | MUST\*   | Tokens used for chain-of-thought reasoning |
-| `prompt_cached_tokens`         | number | Cached responses | SHOULD   | Tokens read from provider cache            |
-| `prompt_cache_creation_tokens` | number | Cached responses | SHOULD   | Tokens written to provider cache           |
+| Metric                            | Type   | Applies to       | Required | Description                                      |
+| --------------------------------- | ------ | ---------------- | -------- | ------------------------------------------------ |
+| `start`                           | number | All spans        | MUST     | Unix timestamp when the span started             |
+| `end`                             | number | All spans        | MUST     | Unix timestamp when the span ended               |
+| `tokens`                          | number | All LLM spans    | MUST     | Total tokens (prompt + completion)               |
+| `prompt_tokens`                   | number | All LLM spans    | MUST     | Input / prompt tokens                            |
+| `completion_tokens`               | number | All LLM spans    | MUST     | Output / completion tokens                       |
+| `time_to_first_token`             | number | Streaming spans  | MUST     | Seconds from request start to first chunk        |
+| `completion_reasoning_tokens`     | number | Reasoning models | MUST\*   | Tokens used for model reasoning                  |
+| `prompt_cached_tokens`            | number | Cached responses | SHOULD   | Tokens read from provider cache                  |
+| `prompt_cache_creation_tokens`    | number | Cached responses | SHOULD   | Tokens written to provider cache                 |
+| `prompt_cache_creation_5m_tokens` | number | Cached responses | SHOULD   | Cache-write tokens for 5-minute TTL entries      |
+| `prompt_cache_creation_1h_tokens` | number | Cached responses | SHOULD   | Cache-write tokens for 1-hour TTL entries        |
+| `estimated_cost`                  | number | LLM spans        | MAY      | Explicit per-span total estimated cost in dollars |
 
 \* MUST be captured when the provider reports it; not all providers/models support reasoning tokens.
 
