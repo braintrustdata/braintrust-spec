@@ -4,11 +4,11 @@ span_attributes:
   - name: braintrust.parent
     documentation: Serialized parent reference used to attach the span to a Braintrust project, experiment, dataset, prompt session, or parent span.
   - name: braintrust.context_json
-    documentation: JSON-encoded context object extracted into the Braintrust row context field. Used for caller location and SDK/instrumentation provenance.
+    documentation: JSON-encoded context object extracted into the Braintrust row context field. Used for caller location and span-origin provenance.
   - name: braintrust.sdk.name
-    documentation: Braintrust SDK package or exporter name that emitted or exported the span. Intended for OTel resource attributes.
+    documentation: Braintrust SDK package or exporter name that emitted or exported the span. Intended for OTel resource attributes and extracted into context.span_origin.name.
   - name: braintrust.sdk.version
-    documentation: Braintrust SDK package or exporter version. Intended for OTel resource attributes.
+    documentation: Braintrust SDK package or exporter version. Intended for OTel resource attributes and extracted into context.span_origin.version.
   - name: braintrust.metrics
     documentation: JSON-encoded metric annotations extracted into the Braintrust row metrics field.
 

@@ -35,11 +35,11 @@ expected_brainstore_spans:
       name: anthropic.messages.create
       type: llm
     context:
-      sdk:
+      span_origin:
         name: !fn is_non_empty_string
         version: !fn is_non_empty_string
-      instrumentation:
-        name: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
     input:
       - role: user
         content:

@@ -24,11 +24,11 @@ expected_brainstore_spans:
       name: anthropic.messages.stream
       type: llm
     context:
-      sdk:
+      span_origin:
         name: !fn is_non_empty_string
         version: !fn is_non_empty_string
-      instrumentation:
-        name: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
     input:
       - content: Count from 1 to 5.
         role: user
