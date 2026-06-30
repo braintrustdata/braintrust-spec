@@ -106,6 +106,8 @@ Braintrust-created spans MUST also include span-origin provenance. Omit fields w
 }
 ```
 
+OTLP ingestion will map standard OTel code attributes into caller-location context when explicit context is not provided: `code.function.name` → `context.caller_functionname`, `code.file.path` → `context.caller_filename`, and `code.line.number` → `context.caller_lineno`.
+
 `context.span_origin` identifies the SDK, integration, Braintrust service, or exporter that emitted or exported the span. For external OTLP spans that do not include Braintrust span-origin provenance, ingestion SHOULD fall back to OTel `telemetry.sdk.name` and `telemetry.sdk.version` resource attributes.
 
 `context.span_origin.instrumentation.name` identifies the stable module, package, plugin, or OTel instrumentation scope that directly created the span. Provider/client SDKs such as `openai` or `anthropic` are not the span origin and SHOULD continue to appear in `metadata.provider` when provider metadata is available.
@@ -865,6 +867,16 @@ Braintrust-specific OTel attributes used by the SDK instrumentation. These are t
 | `braintrust.app_url`  | string | The Braintrust app URL associated with the span, used by the ingestion endpoint to disambiguate environments (e.g. production vs staging).                                            |
 
 `braintrust.parent`, `braintrust.org`, and `braintrust.app_url` are treated as *system* attributes by the SDK's AI-span filter — their presence alone does not mark a span as AI-related.
+
+### Code location
+
+Braintrust also consumes the standard OTel code attributes for caller location:
+
+| Attribute            | Type   | Location       | Extracted context field         |
+| -------------------- | ------ | -------------- | ------------------------------- |
+| `code.function.name` | string | Span attribute | `context.caller_functionname`   |
+| `code.file.path`     | string | Span attribute | `context.caller_filename`       |
+| `code.line.number`   | int    | Span attribute | `context.caller_lineno`         |
 
 ### Span origin provenance
 
