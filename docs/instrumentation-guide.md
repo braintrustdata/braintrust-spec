@@ -341,28 +341,28 @@ For any provider that does not have a dedicated UI normalizer, tool calls in the
 
 **Choice fields:**
 
-| Field           | Type            | Required | Description                                                                                          |
-| --------------- | --------------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `index`         | number          | SHOULD   | The index of this choice in the response (0 for single-choice responses)                             |
-| `finish_reason` | string          | MUST     | Why the model stopped generating. Use `"tool_calls"` when the model produced one or more tool calls. Other values: `"stop"` (natural completion), `"length"` (hit max tokens), `"content_filter"`. |
-| `message`       | object          | MUST     | The assistant's message — see below                                                                  |
+| Field           | Type   | Required | Description                                                                                                                                                                                        |
+| --------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index`         | number | SHOULD   | The index of this choice in the response (0 for single-choice responses)                                                                                                                           |
+| `finish_reason` | string | MUST     | Why the model stopped generating. Use `"tool_calls"` when the model produced one or more tool calls. Other values: `"stop"` (natural completion), `"length"` (hit max tokens), `"content_filter"`. |
+| `message`       | object | MUST     | The assistant's message — see below                                                                                                                                                                |
 
 **Message fields when calling tools:**
 
-| Field        | Type             | Required | Description                                                                                                       |
-| ------------ | ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `role`       | `"assistant"`    | MUST     | Always `"assistant"` for model output                                                                             |
-| `content`    | string \| null   | MUST     | Text content from the model. `null` if the model only produced tool calls without accompanying text.              |
-| `tool_calls` | array            | MUST     | One or more tool call objects (the model can request multiple tools in parallel)                                  |
+| Field        | Type           | Required | Description                                                                                          |
+| ------------ | -------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `role`       | `"assistant"`  | MUST     | Always `"assistant"` for model output                                                                |
+| `content`    | string \| null | MUST     | Text content from the model. `null` if the model only produced tool calls without accompanying text. |
+| `tool_calls` | array          | MUST     | One or more tool call objects (the model can request multiple tools in parallel)                     |
 
 **Tool call object fields:**
 
-| Field                | Type            | Required | Description                                                                                          |
-| -------------------- | --------------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `id`                 | string          | MUST     | Unique identifier for this tool call (e.g. `"call_abc123"`). Used to correlate tool results back to the call in subsequent turns. |
-| `type`               | `"function"`    | MUST     | Always the literal string `"function"`                                                               |
-| `function.name`      | string          | MUST     | The name of the tool/function the model wants to call                                                |
-| `function.arguments` | string          | MUST     | The arguments as a **JSON-encoded string** (not a JSON object). Example: `"{\"location\": \"Paris\"}"`. The string MAY be malformed JSON if the model produced invalid output — in which case it MUST be passed through as-is rather than dropped. |
+| Field                | Type         | Required | Description                                                                                                                                                                                                                                        |
+| -------------------- | ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | string       | MUST     | Unique identifier for this tool call (e.g. `"call_abc123"`). Used to correlate tool results back to the call in subsequent turns.                                                                                                                  |
+| `type`               | `"function"` | MUST     | Always the literal string `"function"`                                                                                                                                                                                                             |
+| `function.name`      | string       | MUST     | The name of the tool/function the model wants to call                                                                                                                                                                                              |
+| `function.arguments` | string       | MUST     | The arguments as a **JSON-encoded string** (not a JSON object). Example: `"{\"location\": \"Paris\"}"`. The string MAY be malformed JSON if the model produced invalid output — in which case it MUST be passed through as-is rather than dropped. |
 
 #### Anthropic (provider-native)
 
@@ -385,12 +385,12 @@ When the output is in Anthropic's native format, tool calls appear as `tool_use`
 
 **Tool use block fields:**
 
-| Field   | Type           | Required | Description                                                                                          |
-| ------- | -------------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `type`  | `"tool_use"`   | MUST     | Always `"tool_use"`                                                                                  |
-| `id`    | string         | MUST     | Unique identifier (Anthropic format: `"toolu_..."`)                                                  |
-| `name`  | string         | MUST     | The tool name                                                                                        |
-| `input` | object         | MUST     | The tool arguments as a **JSON object** (NOT a string — this is a key difference from the OpenAI format) |
+| Field   | Type         | Required | Description                                                                                              |
+| ------- | ------------ | -------- | -------------------------------------------------------------------------------------------------------- |
+| `type`  | `"tool_use"` | MUST     | Always `"tool_use"`                                                                                      |
+| `id`    | string       | MUST     | Unique identifier (Anthropic format: `"toolu_..."`)                                                      |
+| `name`  | string       | MUST     | The tool name                                                                                            |
+| `input` | object       | MUST     | The tool arguments as a **JSON object** (NOT a string — this is a key difference from the OpenAI format) |
 
 The response-level `stop_reason` SHOULD be `"tool_use"` when the model is requesting tool calls. Text and `tool_use` blocks may be interleaved in a single `content` array.
 
@@ -421,10 +421,10 @@ When the output is in Google's native format, tool calls appear as `functionCall
 
 **Function call fields:**
 
-| Field  | Type   | Required | Description                                                                              |
-| ------ | ------ | -------- | ---------------------------------------------------------------------------------------- |
-| `name` | string | MUST     | The tool name                                                                            |
-| `args` | object | MUST     | The tool arguments as a **JSON object** (NOT a string)                                   |
+| Field  | Type   | Required | Description                                            |
+| ------ | ------ | -------- | ------------------------------------------------------ |
+| `name` | string | MUST     | The tool name                                          |
+| `args` | object | MUST     | The tool arguments as a **JSON object** (NOT a string) |
 
 Note that Google does not assign IDs to function calls (unlike OpenAI's `id` and Anthropic's `id`). If correlation is needed across turns, the SDK MUST generate stable IDs synthetically.
 
@@ -519,13 +519,13 @@ Tool definitions MUST be placed in `metadata.tools` as an array of OpenAI Chat C
 
 Each entry in `metadata.tools` MUST conform to the following shape:
 
-| Field                            | Type           | Required | Description                                                                                                          |
-| -------------------------------- | -------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| `type`                           | `"function"`   | MUST     | Always the literal string `"function"`. (Future tool types like `"web_search"` may be added; for now use `"function"`.) |
-| `function.name`                  | string         | MUST     | The tool name. MUST exactly match the `name` the model emits in its tool calls so the user can correlate them.        |
-| `function.description`           | string         | SHOULD   | Human-readable description of what the tool does. Helps the model decide when to call it.                            |
-| `function.parameters`            | object         | SHOULD   | A [JSON Schema](https://json-schema.org/) object describing the arguments the tool accepts. May be omitted for tools that take no arguments. |
-| `function.strict`                | boolean        | MAY      | When `true`, the model is constrained to produce arguments that strictly match the schema. Pass through if the provider supports it. |
+| Field                  | Type         | Required | Description                                                                                                                                  |
+| ---------------------- | ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                 | `"function"` | MUST     | Always the literal string `"function"`. (Future tool types like `"web_search"` may be added; for now use `"function"`.)                      |
+| `function.name`        | string       | MUST     | The tool name. MUST exactly match the `name` the model emits in its tool calls so the user can correlate them.                               |
+| `function.description` | string       | SHOULD   | Human-readable description of what the tool does. Helps the model decide when to call it.                                                    |
+| `function.parameters`  | object       | SHOULD   | A [JSON Schema](https://json-schema.org/) object describing the arguments the tool accepts. May be omitted for tools that take no arguments. |
+| `function.strict`      | boolean      | MAY      | When `true`, the model is constrained to produce arguments that strictly match the schema. Pass through if the provider supports it.         |
 
 If the user passed no tools in the request, `metadata.tools` MUST be omitted (do NOT emit an empty array).
 
@@ -586,6 +586,61 @@ Google's `parameters` field is already a JSON Schema object, so it can be copied
 #### Provider-native tool types
 
 Some providers offer built-in tools that are not user-defined functions (e.g. Anthropic's `computer_use`, `text_editor`, `bash`; OpenAI's `web_search`, `file_search`). These SHOULD be passed through with `type` reflecting the provider-native type and the rest of the configuration preserved as-is under `function` (or under a sibling key matching the provider's API). Capturing them is REQUIRED if the user supplied them, since they affect the model's behavior. The exact schema for these is provider-specific and is outside the scope of this section.
+
+### Prompt metadata
+
+When an LLM call uses a Braintrust-managed prompt (either remote or locally defined using the SDK), instrumentation MUST attach the prompt provenance to the same `llm` span whose `input` contains the rendered prompt. This metadata lets Braintrust connect logged spans back to saved prompts, prompt versions, playground runs, and the exact variables used to render the prompt.
+
+Prompt metadata is span metadata, not conversation content. It MUST be placed in `metadata.prompt`; it MUST NOT be included in the `input` messages array, in provider request payloads, or in `metadata.tools`.
+
+#### Where it goes
+
+Native Braintrust SDK logging MUST emit prompt provenance as nested span metadata:
+
+```json
+{
+  "metadata": {
+    "prompt": {
+      "id": "prompt_123",
+      "project_id": "project_456",
+      "version": "1715895278123456",
+      "variables": {
+        "question": "What is the capital of France?"
+      }
+    }
+  }
+}
+```
+
+OpenTelemetry exporters MUST JSON-encode the same object in `braintrust.metadata`:
+
+```json
+{
+  "braintrust.metadata": "{\"prompt\":{\"id\":\"prompt_123\",\"project_id\":\"project_456\",\"version\":\"1715895278123456\",\"variables\":{\"question\":\"What is the capital of France?\"}}}"
+}
+```
+
+#### Prompt metadata schema
+
+When `metadata.prompt` is present, it MUST conform to the following shape:
+
+| Field               | Type   | Required                 | Description                                                                                     |
+| ------------------- | ------ | ------------------------ | ----------------------------------------------------------------------------------------------- |
+| `id`                | string | MUST                     | The rendered prompt row/function identifier.                                                    |
+| `project_id`        | string | MUST                     | The Braintrust project containing the prompt reference.                                         |
+| `version`           | string | MUST                     | The prompt row/version transaction identifier used to render the prompt.                        |
+| `variables`         | any    | MUST                     | The exact JSON-serializable render/build variables used for the call.                           |
+| `prompt_session_id` | string | MUST for prompt sessions | Playground/prompt-session identifier. Required when the prompt comes from a playground session. |
+
+If the call does not use a Braintrust-managed prompt, `metadata.prompt` MUST be omitted.
+
+For a playground or prompt-session call, instrumentation MUST emit the same `metadata.prompt` shape and include `prompt_session_id` in addition to `id`, `project_id`, `version`, and `variables`.
+
+#### Injection and merging
+
+Prompt builders MAY use wrapper-only carrier fields (for example, `span_info`) to pass prompt provenance from prompt rendering into instrumentation wrappers. These carrier fields are internal plumbing only: instrumentation MUST strip them before sending the provider request and MUST NOT log them in span `input`.
+
+Instrumentation MUST merge `metadata.prompt` with other span metadata such as `provider`, `model`, request parameters, `tools`, and `tool_choice`. `metadata.prompt` is reserved Braintrust provenance metadata; user-supplied metadata MUST NOT overwrite it.
 
 ### Metadata
 
@@ -964,13 +1019,13 @@ Braintrust-specific OTel attributes used by the SDK instrumentation. These are t
 
 ### Routing and context
 
-| Attribute             | Type   | Description                                                                                                                                                                            |
-| --------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `braintrust.parent`   | string | Serialized parent reference used to attach the span to a Braintrust container (project, experiment, dataset, or another span). Required for the ingestion endpoint to route the span. |
-| `braintrust.org`      | string | The Braintrust organization name the span belongs to. Set by the SDK when the org cannot be inferred from the API key alone.                                                          |
-| `braintrust.app_url`  | string | The Braintrust app URL associated with the span, used by the ingestion endpoint to disambiguate environments (e.g. production vs staging).                                            |
+| Attribute            | Type   | Description                                                                                                                                                                           |
+| -------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `braintrust.parent`  | string | Serialized parent reference used to attach the span to a Braintrust container (project, experiment, dataset, or another span). Required for the ingestion endpoint to route the span. |
+| `braintrust.org`     | string | The Braintrust organization name the span belongs to. Set by the SDK when the org cannot be inferred from the API key alone.                                                          |
+| `braintrust.app_url` | string | The Braintrust app URL associated with the span, used by the ingestion endpoint to disambiguate environments (e.g. production vs staging).                                            |
 
-`braintrust.parent`, `braintrust.org`, and `braintrust.app_url` are treated as *system* attributes by the SDK's AI-span filter — their presence alone does not mark a span as AI-related.
+`braintrust.parent`, `braintrust.org`, and `braintrust.app_url` are treated as _system_ attributes by the SDK's AI-span filter — their presence alone does not mark a span as AI-related.
 
 ### Code location
 
@@ -996,32 +1051,32 @@ OTLP ingestion SHOULD derive `context.span_origin.instrumentation.name` from the
 
 ### Span content
 
-| Attribute                  | Type   | Description                                                                                                                                                                              |
-| -------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `braintrust.input_json`    | string | JSON-encoded request input. For LLM spans, this is the messages array (or provider-equivalent input). Extracted into the `input` field of the log row.                                   |
-| `braintrust.output_json`   | string | JSON-encoded response output. For LLM spans, this is the response choices/output. Extracted into the `output` field of the log row.                                                      |
-| `braintrust.expected_json` | string | JSON-encoded expected output for eval cases. Extracted into the `expected` field of the log row.                                                                                         |
-| `braintrust.metadata`      | string | JSON-encoded metadata (e.g. `model`, `provider`, request parameters like `temperature`/`max_tokens`). Extracted into the `metadata` field of the log row.                                |
-| `braintrust.metrics`       | string | JSON-encoded metric annotations attached to the span. Used to pass SDK-computed metrics (e.g. `time_to_first_token`, token counts) to the Braintrust exporter as the `metrics` log field.|
-| `braintrust.scores`        | string | JSON-encoded map of score name → numeric value. Set on `score` spans produced by evals. Extracted into the `scores` field of the log row.                                                |
-| `braintrust.span_attributes` | string | JSON-encoded span type and naming info, e.g. `{"type": "llm"}` or `{"type": "task", "name": "agent run"}`. Extracted into the `span_attributes` field of the log row.                  |
+| Attribute                    | Type   | Description                                                                                                                                                                                         |
+| ---------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `braintrust.input_json`      | string | JSON-encoded request input. For LLM spans, this is the messages array (or provider-equivalent input). Extracted into the `input` field of the log row.                                              |
+| `braintrust.output_json`     | string | JSON-encoded response output. For LLM spans, this is the response choices/output. Extracted into the `output` field of the log row.                                                                 |
+| `braintrust.expected_json`   | string | JSON-encoded expected output for eval cases. Extracted into the `expected` field of the log row.                                                                                                    |
+| `braintrust.metadata`        | string | JSON-encoded metadata (e.g. `model`, `provider`, request parameters like `temperature`/`max_tokens`, and nested prompt provenance in `prompt`). Extracted into the `metadata` field of the log row. |
+| `braintrust.metrics`         | string | JSON-encoded metric annotations attached to the span. Used to pass SDK-computed metrics (e.g. `time_to_first_token`, token counts) to the Braintrust exporter as the `metrics` log field.           |
+| `braintrust.scores`          | string | JSON-encoded map of score name → numeric value. Set on `score` spans produced by evals. Extracted into the `scores` field of the log row.                                                           |
+| `braintrust.span_attributes` | string | JSON-encoded span type and naming info, e.g. `{"type": "llm"}` or `{"type": "task", "name": "agent run"}`. Extracted into the `span_attributes` field of the log row.                               |
 
 ### Span properties
 
-| Attribute            | Type           | Description                                                                                                                                                                                       |
-| -------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `braintrust.tags`    | string array   | Tags attached to the log row. Set as a native OTel string-array attribute (not JSON-encoded).                                                                                                     |
-| `braintrust.origin`  | string         | JSON-encoded origin reference identifying the source row this span derives from (e.g. a dataset row pointer with `object_type`, `object_id`, and `id`). Extracted into the `origin` field.        |
+| Attribute           | Type         | Description                                                                                                                                                                                |
+| ------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `braintrust.tags`   | string array | Tags attached to the log row. Set as a native OTel string-array attribute (not JSON-encoded).                                                                                              |
+| `braintrust.origin` | string       | JSON-encoded origin reference identifying the source row this span derives from (e.g. a dataset row pointer with `object_type`, `object_id`, and `id`). Extracted into the `origin` field. |
 
 ### Legacy aliases
 
 For backward compatibility, the ingestion pipeline also accepts the non-`_json` forms below. New instrumentation SHOULD prefer the `_json` variants documented above.
 
-| Attribute            | Type   | Equivalent to             |
-| -------------------- | ------ | ------------------------- |
-| `braintrust.input`   | string | `braintrust.input_json`   |
-| `braintrust.output`  | string | `braintrust.output_json`  |
-| `braintrust.expected`| string | `braintrust.expected_json`|
+| Attribute             | Type   | Equivalent to              |
+| --------------------- | ------ | -------------------------- |
+| `braintrust.input`    | string | `braintrust.input_json`    |
+| `braintrust.output`   | string | `braintrust.output_json`   |
+| `braintrust.expected` | string | `braintrust.expected_json` |
 
 ---
 
