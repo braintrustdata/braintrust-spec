@@ -35,6 +35,14 @@ Each span is stored as a Braintrust log row. The backend accepts the following f
 
 Note: `input` and `output` are **free-form JSON** — the backend does not enforce any structure on them. The conventions described in this guide are SDK-level standards for how instrumentation should populate these fields.
 
+### Data capturing policy
+
+Instrumentation MUST NOT capture any data or fields unless this guide explicitly requires or allows them. This applies even when the backend can store arbitrary JSON or a provider/framework SDK exposes additional data.
+
+New captured fields MUST be added to this specification before SDKs emit them. This background behind this policy is to keep telemetry reliable and predictable, avoids unnecessary data capture (which are critical both in terms of data-volume and PII), and facilitates building an opinionated product around our instrumentation.
+
+It is encouraged to expand this specification for any data that may already be captured (preceding this policy), however extensions of this specification should go through critical review.
+
 ### Span types
 
 Braintrust supports the following `span_attributes.type` values:
@@ -64,30 +72,29 @@ Spans form a tree (technically a DAG) within a trace:
 
 ### Metrics
 
-The `metrics` field is an object of string keys to numeric values. The backend accepts any numeric key-value pair. Standard fields:
+The `metrics` field is an object of string keys to numeric values. Instrumentation MUST only emit metric fields explicitly listed in this guide even though the backend accepts arbitrary numeric keys. Standard fields:
 
-| Field               | Description                               |
-| ------------------- | ----------------------------------------- |
-| `start`             | Unix timestamp when the span started      |
-| `end`               | Unix timestamp when the span ended        |
-| `prompt_tokens`     | Input/prompt token count (LLM spans)      |
-| `completion_tokens` | Output/completion token count (LLM spans) |
-| `tokens`            | Total token count (LLM spans)             |
-
-Additional metrics (e.g. `time_to_first_token`, `completion_reasoning_tokens`) are added as needed — the backend accepts arbitrary numeric keys.
+| Field                 | Description                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| `start`               | Unix timestamp when the span started                                                 |
+| `end`                 | Unix timestamp when the span ended                                                   |
+| `prompt_tokens`       | Input/prompt token count (LLM spans)                                                 |
+| `completion_tokens`   | Output/completion token count (LLM spans)                                            |
+| `tokens`              | Total token count (LLM spans)                                                        |
+| `time_to_first_token` | Time until first _generated_ (meaning model generated) byte arrives on the client in |
 
 ### Context
 
 The `context` field is an object containing textual information about the code and systems that produced the span. SDKs MUST preserve the existing caller-location fields when available; caller-location fields are optional because not every runtime or instrumentation path can determine them.
 
-| Field                              | Type            | Description                                                                          |
-| ---------------------------------- | --------------- | ------------------------------------------------------------------------------------ |
-| `caller_functionname`              | string optional | Function or method that created the span                                             |
-| `caller_filename`                  | string optional | File where the span was created                                                      |
-| `caller_lineno`                    | number optional | Line number where the span was created                                               |
-| `span_origin.name`                 | string optional | SDK, integration, Braintrust service, or exporter that emitted or exported the span   |
-| `span_origin.version`              | string optional | Version of the SDK, integration, Braintrust service, or exporter when known           |
-| `span_origin.instrumentation.name` | string optional | Stable module, package, plugin, or OTel instrumentation scope that created the span   |
+| Field                              | Type            | Description                                                                         |
+| ---------------------------------- | --------------- | ----------------------------------------------------------------------------------- |
+| `caller_functionname`              | string optional | Function or method that created the span                                            |
+| `caller_filename`                  | string optional | File where the span was created                                                     |
+| `caller_lineno`                    | number optional | Line number where the span was created                                              |
+| `span_origin.name`                 | string optional | SDK, integration, Braintrust service, or exporter that emitted or exported the span |
+| `span_origin.version`              | string optional | Version of the SDK, integration, Braintrust service, or exporter when known         |
+| `span_origin.instrumentation.name` | string optional | Stable module, package, plugin, or OTel instrumentation scope that created the span |
 
 Braintrust-created spans MUST also include span-origin provenance. Omit fields whose values are unknown.
 
@@ -475,13 +482,13 @@ The `tool_call_id` MUST match the `id` from the corresponding tool call in the p
 }
 ```
 
-### Tool definitions
+### Available tool definitions
 
-Tool definitions are the schemas the user passes to the model in the request, declaring what tools the model is allowed to call. They are **request configuration**, not conversation content — so they MUST NOT appear in the `input` messages array. Instead, they are transported on the span's `metadata` field.
+Available tool definitions are the schemas and configuration the user passes to the model in the request, declaring what tools the model is allowed to call for that exact LLM call. They are **request configuration**, not conversation content — so they MUST NOT appear in the `input` messages array. Instead, they are transported on the span's `metadata` field.
 
 #### Where they go
 
-Tool definitions MUST be placed in `metadata.tools` as an array of OpenAI Chat Completions tool objects, regardless of the underlying provider:
+Available tool definitions MUST be placed in `metadata.tools` on every `llm` span whose request makes one or more tools available. `metadata.tools` is an array of OpenAI Chat Completions-style tool objects for function-like tools, regardless of the underlying provider:
 
 ```json
 {
@@ -510,26 +517,30 @@ Tool definitions MUST be placed in `metadata.tools` as an array of OpenAI Chat C
         }
       }
     ],
-    "tool_choice": "auto"
+    "tool_choice": "auto",
+    "parallel_tool_calls": true,
+    "max_tool_calls": 3
   }
 }
 ```
 
+If a model call occurs inside an agentic tool-use loop, each child `llm` span MUST include the `metadata.tools` value for the tools available to that specific model call. Do not copy a parent or earlier child span's tools if the available tool set changed.
+
 #### Tool object schema
 
-Each entry in `metadata.tools` MUST conform to the following shape:
+Each function-like entry in `metadata.tools` MUST conform to the following shape:
 
-| Field                  | Type         | Required | Description                                                                                                                                  |
-| ---------------------- | ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`                 | `"function"` | MUST     | Always the literal string `"function"`. (Future tool types like `"web_search"` may be added; for now use `"function"`.)                      |
-| `function.name`        | string       | MUST     | The tool name. MUST exactly match the `name` the model emits in its tool calls so the user can correlate them.                               |
-| `function.description` | string       | SHOULD   | Human-readable description of what the tool does. Helps the model decide when to call it.                                                    |
-| `function.parameters`  | object       | SHOULD   | A [JSON Schema](https://json-schema.org/) object describing the arguments the tool accepts. May be omitted for tools that take no arguments. |
-| `function.strict`      | boolean      | MAY      | When `true`, the model is constrained to produce arguments that strictly match the schema. Pass through if the provider supports it.         |
+| Field                  | Type         | Required | Description                                                                                                                                               |
+| ---------------------- | ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                 | `"function"` | MUST     | Always the literal string `"function"` for user-defined function-like tools.                                                                              |
+| `function.name`        | string       | MUST     | The tool name. MUST exactly match the `name` the model emits in its tool calls so the user can correlate definitions, calls, and results.                 |
+| `function.description` | string       | MAY      | Human-readable description of what the tool does. Helps the model decide when to call it.                                                                 |
+| `function.parameters`  | object       | SHOULD   | A [JSON Schema](https://json-schema.org/) object describing the tool's input arguments. May be omitted for tools that take no arguments.                  |
+| `function.strict`      | boolean      | MAY      | Whether the model is constrained to produce arguments that strictly match the schema. Preserve `true` or `false` when known; omit when unknown or `null`. |
 
 If the user passed no tools in the request, `metadata.tools` MUST be omitted (do NOT emit an empty array).
 
-#### `tool_choice`
+#### Tool request controls
 
 If the user passed a `tool_choice` (or equivalent) parameter to control whether/which tool the model uses, it MUST be captured in `metadata.tool_choice`. Valid values follow the OpenAI convention:
 
@@ -540,52 +551,17 @@ If the user passed a `tool_choice` (or equivalent) parameter to control whether/
 
 Other provider-specific values (e.g. Anthropic's `{ "type": "any" }`, Google's `function_calling_config.mode`) MUST be normalized to one of the OpenAI values above before being placed in `metadata.tool_choice`.
 
+If the user passed `parallel_tool_calls`, `max_tool_calls`, or equivalent provider/framework settings, instrumentation MUST preserve them as `metadata.parallel_tool_calls` and `metadata.max_tool_calls` when supplied or known.
+
 #### Converting from provider-native formats
 
-The SDK MUST convert the provider's tool definition format into the OpenAI shape above before placing it in metadata. The following table describes the field mappings.
-
-**Anthropic → OpenAI:**
-
-```
-Anthropic                          OpenAI
-─────────────────────────────────────────────────────────────────
-{                                  {
-  "name": "get_weather",             "type": "function",
-  "description": "...",              "function": {
-  "input_schema": {                    "name": "get_weather",
-    "type": "object", ...               "description": "...",
-  }                                     "parameters": {
-}                                         "type": "object", ...
-                                        }
-                                      }
-                                   }
-```
-
-The Anthropic `input_schema` field maps to `function.parameters`. The top-level `name` and `description` move under `function`.
-
-**Google → OpenAI:**
-
-Google passes tool declarations inside `tools[].function_declarations[]`. Each function declaration maps to one OpenAI tool:
-
-```
-Google                                                OpenAI
-──────────────────────────────────────────────────────────────────────
-{                                                     {
-  "function_declarations": [                            "type": "function",
-    {                                                   "function": {
-      "name": "get_weather",                              "name": "get_weather",
-      "description": "...",                               "description": "...",
-      "parameters": { ... }                               "parameters": { ... }
-    }                                                   }
-  ]                                                   }
-}
-```
-
-Google's `parameters` field is already a JSON Schema object, so it can be copied directly. The SDK MUST flatten `function_declarations` arrays — each declaration becomes its own entry in `metadata.tools`.
+The SDK MUST convert the provider's tool definition format into the OpenAI shape above before placing it in metadata.
 
 #### Provider-native tool types
 
-Some providers offer built-in tools that are not user-defined functions (e.g. Anthropic's `computer_use`, `text_editor`, `bash`; OpenAI's `web_search`, `file_search`). These SHOULD be passed through with `type` reflecting the provider-native type and the rest of the configuration preserved as-is under `function` (or under a sibling key matching the provider's API). Capturing them is REQUIRED if the user supplied them, since they affect the model's behavior. The exact schema for these is provider-specific and is outside the scope of this section.
+Some providers offer built-in tools that are not user-defined functions (e.g. Anthropic's `computer_use`, `text_editor`, `bash`; OpenAI's `web_search`, `file_search`). These MUST remain in `metadata.tools` if the user supplied them, since they affect the model's behavior. Preserve the provider-native `type` and JSON-serializable configuration for these tools; do not provide fake function names, input schemas, or output schemas.
+
+Instrumentation MUST NOT log executable tool handlers, closures, code bodies, or other non-JSON runtime objects in `metadata.tools`. If the framework exposes both runtime handlers and serializable tool definitions, log only the serializable definitions sent or made available to the model.
 
 ### Prompt metadata
 
@@ -640,7 +616,7 @@ For a playground or prompt-session call, instrumentation MUST emit the same `met
 
 Prompt builders MAY use wrapper-only carrier fields (for example, `span_info`) to pass prompt provenance from prompt rendering into instrumentation wrappers. These carrier fields are internal plumbing only: instrumentation MUST strip them before sending the provider request and MUST NOT log them in span `input`.
 
-Instrumentation MUST merge `metadata.prompt` with other span metadata such as `provider`, `model`, request parameters, `tools`, and `tool_choice`. `metadata.prompt` is reserved Braintrust provenance metadata; user-supplied metadata MUST NOT overwrite it.
+Instrumentation MUST merge `metadata.prompt` with other span metadata such as `provider`, `model`, `tools`, and `tool_choice`. `metadata.prompt` is reserved Braintrust provenance metadata; user-supplied metadata MUST NOT overwrite it.
 
 ### Metadata
 
@@ -652,6 +628,10 @@ Every LLM span MUST include:
 | `provider` | The provider name                           | `openai`                 |
 
 The `model` field SHOULD use the model string from the API response (which may include a version suffix) rather than the string the user passed in the request.
+
+Instrumentation MAY include only the following LLM request configuration fields in metadata when they are present and JSON-serializable: `temperature`, `top_p`, `max_tokens`, `frequency_penalty`, `presence_penalty`, `stop`, and `response_format`.
+
+Tool-related metadata fields are specified in [Available tool definitions](#available-tool-definitions). Prompt provenance metadata fields are specified in [Prompt metadata](#prompt-metadata). Any additional metadata field requires a specification update before SDKs emit it.
 
 ### Metrics
 
@@ -693,7 +673,7 @@ Each individual LLM API call within the loop MUST produce a child `llm` span, fo
 - The input captures the messages sent to the model for that specific call (including tool results from previous iterations)
 - The output captures the model's response (which may include tool calls or a final text response)
 - Metrics capture token counts for that individual call
-- Metadata includes `model` and `provider`
+- Metadata includes `model`, `provider`, and any available tool definitions for that specific model call in `metadata.tools`
 
 ### Child tool spans (tool executions)
 
@@ -876,11 +856,11 @@ The canonical replacement object is:
 }
 ```
 
-| Field          | Description                               |
-| -------------- | ----------------------------------------- |
-| `type`         | Always `"braintrust_attachment"`          |
-| `content_type` | MIME type of the attachment               |
-| `filename`     | Generated or provider-supplied filename   |
+| Field          | Description                                             |
+| -------------- | ------------------------------------------------------- |
+| `type`         | Always `"braintrust_attachment"`                        |
+| `content_type` | MIME type of the attachment                             |
+| `filename`     | Generated or provider-supplied filename                 |
 | `key`          | Usually a UUID v4 string identifying the uploaded bytes |
 
 `filename`, `content_type`, and `key` MUST be non-empty strings. In current Braintrust SDKs and backend auto-conversion, `key` is generated as a UUID v4 string for each attachment. New SDKs SHOULD use the same convention. It is not a URL, filename, provider file ID, or content hash. Braintrust uses this id to derive the actual object-store path, so the `braintrust_attachment` reference should contain only the UUID-like id, not the full storage path. Use the same `key` when requesting the signed upload URL, uploading the bytes, reporting upload status, and writing the reference into `input` or `output`; treat it as opaque after it is generated.
@@ -901,9 +881,9 @@ When instrumentation cannot determine a valid MIME type or cannot decode the val
 
 For normalized content parts that are not constrained to a provider-native shape, place attachments inside the message/content payload, not in `metadata`:
 
-| Media type | Logged content part |
-| ---------- | ------------------- |
-| Images (`image/*`) | `{ "type": "image_url", "image_url": { "url": <braintrust_attachment> } }` |
+| Media type                                     | Logged content part                                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Images (`image/*`)                             | `{ "type": "image_url", "image_url": { "url": <braintrust_attachment> } }`                       |
 | PDFs, documents, audio, video, and other files | `{ "type": "file", "file": { "filename": "<filename>", "file_data": <braintrust_attachment> } }` |
 
 Preserve provider-supplied filenames when available.
@@ -914,11 +894,11 @@ If a provider-native payload has a dedicated Braintrust UI normalizer, instrumen
 
 The same attachment rules apply to generated media in `output`. Generated media MUST be logged in the `output` payload, not in `metadata`. If the provider response already has an output item or content part containing inline media, preserve that provider response structure and replace only the binary leaf with a `braintrust_attachment`. If there is no provider-native structure to preserve, use the same normalized `image_url` and `file` content part shapes used for inputs.
 
-- Chat audio outputs: attach binary audio data, preserve compact transcript/text fields, and record audio metadata such as MIME type, byte size, and audio token metrics when the provider reports them.
-- Image generation and image edit outputs: convert returned base64 image data from provider-specific result fields to image attachments. Preserve provider status, prompt/revised prompt, model, and other compact metadata.
+- Chat audio outputs: attach binary audio data, preserve compact transcript/text fields, and record these audio metadata fields when the provider reports them: MIME type, byte size, and audio token metrics.
+- Image generation and image edit outputs: convert returned base64 image data from provider-specific result fields to image attachments. Preserve provider status, prompt/revised prompt, and model when the provider reports them.
 - Speech-to-text and OCR: log input media or documents as attachments. Log transcripts, pages, detected text, and structured extraction results as text/JSON. Attach any large returned page images or media artifacts.
 - Text-to-speech: log input text as normal request input and log generated audio as an attachment.
-- Video generation and other long-running media operations: when the wrapper waits or polls for completion, log the initial request and final media result on the `llm` span. If the wrapper only starts an operation, log the provider operation ID/status and any best-effort metadata available at return time.
+- Video generation and other long-running media operations: when the wrapper waits or polls for completion, log the initial request and final media result on the `llm` span. If the wrapper only starts an operation, log the provider operation ID and status when available at return time.
 
 ### Streaming multimodal outputs
 
@@ -932,15 +912,15 @@ Streaming instrumentation MUST aggregate media chunks into the final `output` ra
 
 These API families SHOULD follow the same attachment rules even when they are not chat/message APIs. SDK support may be phased in over time; this table defines the desired instrumentation shape without prescribing provider-specific APIs.
 
-| API family | Span shape |
-| ---------- | ---------- |
-| Image generation / editing | One `llm` span per model execution. Input prompt/reference images are logged in `input`; generated images are attachments in `output`. |
-| Video generation | One `llm` span for the operation observed by the wrapper. Inputs and final video artifacts use attachments; operation IDs/status remain in metadata or output. |
-| Audio transcription / speech generation | Speech-to-text attaches input audio and logs transcript output. Text-to-speech logs text input and attaches generated audio output. |
-| OCR / document understanding | Attach input documents/images and log extracted text/structured page data as JSON. |
-| Multimodal embeddings | For now, only track token metrics when the provider reports them. Detailed multimodal embedding payload conventions are still a separate TODO. |
-| Realtime / live APIs | Use a parent `task` span for the session with child spans for model turns, media exchanges, and tool calls. Detailed event lifecycle conventions are still a separate TODO. |
-| Prediction-style model runner APIs | Log provider-native input/output JSON, converting any media fields with inline bytes/base64/data URLs into attachments. |
+| API family                              | Span shape                                                                                                                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Image generation / editing              | One `llm` span per model execution. Input prompt/reference images are logged in `input`; generated images are attachments in `output`.                                      |
+| Video generation                        | One `llm` span for the operation observed by the wrapper. Inputs and final video artifacts use attachments; operation IDs/status remain in metadata or output.              |
+| Audio transcription / speech generation | Speech-to-text attaches input audio and logs transcript output. Text-to-speech logs text input and attaches generated audio output.                                         |
+| OCR / document understanding            | Attach input documents/images and log extracted text/structured page data as JSON.                                                                                          |
+| Multimodal embeddings                   | For now, only track token metrics when the provider reports them. Detailed multimodal embedding payload conventions are still a separate TODO.                              |
+| Realtime / live APIs                    | Use a parent `task` span for the session with child spans for model turns, media exchanges, and tool calls. Detailed event lifecycle conventions are still a separate TODO. |
+| Prediction-style model runner APIs      | Log provider-native input/output JSON, converting any media fields with inline bytes/base64/data URLs into attachments.                                                     |
 
 ---
 
@@ -990,7 +970,7 @@ Instrument calls through the Vercel AI SDK's `generateText`, `streamText`, and r
 
 ## Metrics Reference
 
-The `metrics` object accepts arbitrary numeric keys. The following are standard metrics that instrumentation SHOULD populate:
+Instrumentation MUST only emit the metric keys listed in this guide. The following are standard metrics that instrumentation SHOULD populate:
 
 | Metric                         | Type   | Applies to       | Required | Description                                |
 | ------------------------------ | ------ | ---------------- | -------- | ------------------------------------------ |
@@ -1009,7 +989,7 @@ The `metrics` object accepts arbitrary numeric keys. The following are standard 
 
 \* MUST be captured when the provider reports it; not all providers/models support reasoning tokens.
 
-SDKs MAY add additional numeric metrics beyond this list.
+SDKs MUST NOT add metrics beyond the keys listed in this guide. Add new metric keys to this specification before emitting them.
 
 ---
 
@@ -1031,19 +1011,19 @@ Braintrust-specific OTel attributes used by the SDK instrumentation. These are t
 
 Braintrust also consumes the standard OTel code attributes for caller location:
 
-| Attribute            | Type   | Location       | Extracted context field         |
-| -------------------- | ------ | -------------- | ------------------------------- |
-| `code.function.name` | string | Span attribute | `context.caller_functionname`   |
-| `code.file.path`     | string | Span attribute | `context.caller_filename`       |
-| `code.line.number`   | int    | Span attribute | `context.caller_lineno`         |
+| Attribute            | Type   | Location       | Extracted context field       |
+| -------------------- | ------ | -------------- | ----------------------------- |
+| `code.function.name` | string | Span attribute | `context.caller_functionname` |
+| `code.file.path`     | string | Span attribute | `context.caller_filename`     |
+| `code.line.number`   | int    | Span attribute | `context.caller_lineno`       |
 
 ### Span origin provenance
 
-| Attribute                         | Type   | Location       | Description                                                                                                                                      |
-| --------------------------------- | ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `braintrust.context_json`         | string | Span attribute | JSON-encoded context object. Extracted into the `context` field of the log row and deep-merged with backend-derived OTel provenance.             |
-| `braintrust.sdk.name`             | string | Resource attr  | Braintrust SDK package/exporter name that emitted or exported the span. Extracted into `context.span_origin.name`.                                |
-| `braintrust.sdk.version`          | string | Resource attr  | Braintrust SDK package/exporter version. Extracted into `context.span_origin.version`.                                                            |
+| Attribute                 | Type   | Location       | Description                                                                                                                          |
+| ------------------------- | ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `braintrust.context_json` | string | Span attribute | JSON-encoded context object. Extracted into the `context` field of the log row and deep-merged with backend-derived OTel provenance. |
+| `braintrust.sdk.name`     | string | Resource attr  | Braintrust SDK package/exporter name that emitted or exported the span. Extracted into `context.span_origin.name`.                   |
+| `braintrust.sdk.version`  | string | Resource attr  | Braintrust SDK package/exporter version. Extracted into `context.span_origin.version`.                                               |
 
 When `braintrust.sdk.*` resource attributes are present, ingestion MUST populate `context.span_origin.name` and `context.span_origin.version` from them. Otherwise, ingestion SHOULD derive `context.span_origin.name` and `context.span_origin.version` from OTel `telemetry.sdk.name` and `telemetry.sdk.version` resource attributes.
 
@@ -1051,15 +1031,15 @@ OTLP ingestion SHOULD derive `context.span_origin.instrumentation.name` from the
 
 ### Span content
 
-| Attribute                    | Type   | Description                                                                                                                                                                                         |
-| ---------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `braintrust.input_json`      | string | JSON-encoded request input. For LLM spans, this is the messages array (or provider-equivalent input). Extracted into the `input` field of the log row.                                              |
-| `braintrust.output_json`     | string | JSON-encoded response output. For LLM spans, this is the response choices/output. Extracted into the `output` field of the log row.                                                                 |
-| `braintrust.expected_json`   | string | JSON-encoded expected output for eval cases. Extracted into the `expected` field of the log row.                                                                                                    |
-| `braintrust.metadata`        | string | JSON-encoded metadata (e.g. `model`, `provider`, request parameters like `temperature`/`max_tokens`, and nested prompt provenance in `prompt`). Extracted into the `metadata` field of the log row. |
-| `braintrust.metrics`         | string | JSON-encoded metric annotations attached to the span. Used to pass SDK-computed metrics (e.g. `time_to_first_token`, token counts) to the Braintrust exporter as the `metrics` log field.           |
-| `braintrust.scores`          | string | JSON-encoded map of score name → numeric value. Set on `score` spans produced by evals. Extracted into the `scores` field of the log row.                                                           |
-| `braintrust.span_attributes` | string | JSON-encoded span type and naming info, e.g. `{"type": "llm"}` or `{"type": "task", "name": "agent run"}`. Extracted into the `span_attributes` field of the log row.                               |
+| Attribute                    | Type   | Description                                                                                                                                                                                                                                           |
+| ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `braintrust.input_json`      | string | JSON-encoded request input. For LLM spans, this is the messages array (or provider-equivalent input). Extracted into the `input` field of the log row.                                                                                                |
+| `braintrust.output_json`     | string | JSON-encoded response output. For LLM spans, this is the response choices/output. Extracted into the `output` field of the log row.                                                                                                                   |
+| `braintrust.expected_json`   | string | JSON-encoded expected output for eval cases. Extracted into the `expected` field of the log row.                                                                                                                                                      |
+| `braintrust.metadata`        | string | JSON-encoded metadata (e.g. `model`, `provider`, allowed request parameters such as `temperature`/`max_tokens`, available tool definitions in `tools`, and nested prompt provenance in `prompt`). Extracted into the `metadata` field of the log row. |
+| `braintrust.metrics`         | string | JSON-encoded metric annotations attached to the span. Used to pass SDK-computed metrics (e.g. `time_to_first_token`, token counts) to the Braintrust exporter as the `metrics` log field.                                                             |
+| `braintrust.scores`          | string | JSON-encoded map of score name → numeric value. Set on `score` spans produced by evals. Extracted into the `scores` field of the log row.                                                                                                             |
+| `braintrust.span_attributes` | string | JSON-encoded span type and naming info, e.g. `{"type": "llm"}` or `{"type": "task", "name": "agent run"}`. Extracted into the `span_attributes` field of the log row.                                                                                 |
 
 ### Span properties
 
