@@ -12,6 +12,8 @@ Anthropic's prompt caching lets callers mark portions of a prompt with `cache_co
 
 Because the two TTL tiers have different prices, Braintrust SDKs **MUST** surface Anthropic cache writes using the 5m/1h breakdown so that downstream cost tooling can attribute spend correctly. In general, SDKs **SHOULD** emit either the aggregate `prompt_cache_creation_tokens` metric or the TTL-specific creation metrics, not both. Anthropic spans **MUST** use a single representation.
 
+For cross-provider token and estimated-cost semantics, including provider/model attribution requirements and the complete cost formula, see [Token and cost metrics](token-and-cost-metrics.md).
+
 ---
 
 ## Applicability
@@ -71,7 +73,7 @@ If both an aggregate and a per-TTL breakdown are available from the provider, th
 
 ### Server-side cost computation
 
-Braintrust's cost pipeline is tolerant of all SDK shapes: aggregate only, breakdown only, or both aggregate and breakdown. SDKs should still prefer a single representation, and Anthropic spans must send only one representation.
+Braintrust's cost pipeline is tolerant of all SDK shapes: aggregate only, breakdown only, or both aggregate and breakdown. SDKs should still prefer a single representation, and Anthropic spans must send only one representation. The complete cross-provider cost semantics are defined in [Token and cost metrics](token-and-cost-metrics.md).
 
 Server cost logic computes effective creation tokens with a `max(...)` rule so both representations can be present without double-counting:
 
