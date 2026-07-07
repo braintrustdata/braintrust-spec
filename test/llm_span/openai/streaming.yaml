@@ -20,6 +20,7 @@ expected_brainstore_spans:
       tokens: !fn is_non_negative_number
       prompt_tokens: !fn is_non_negative_number
       completion_tokens: !fn is_non_negative_number
+      prompt_cached_tokens: !fn is_non_negative_number
     metadata:
       model: !starts_with "gpt-4o-mini"
       provider: openai
