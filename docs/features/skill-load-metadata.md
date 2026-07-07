@@ -18,12 +18,13 @@ There are two distinct skill attribution surfaces:
   explicit skill invocation syntax.
 
 These surfaces intentionally use different span identities and metadata shapes.
-Observed loads are represented by normalized `tool` spans with singular
-`skill_*` fields. Explicit parsed requests are represented on the message or turn
-span that contains the request, using plural `loaded_*` fields because one
-message may reference multiple skills. When an explicit request also produces a
-real skill-load tool span, emit both surfaces: the message/turn span records what
-the user requested, and the tool span records what content was actually loaded.
+Observed loads are represented by `tool` spans with `metadata.tool_kind =
+"skill"` and singular `skill_*` fields. Explicit parsed requests are represented
+on the message or turn span that contains the request, using plural `loaded_*`
+fields because one message may reference multiple skills. When an explicit
+request also produces a real skill-load tool span, emit both surfaces: the
+message/turn span records what the user requested, and the tool span records what
+content was actually loaded.
 
 Examples of observed loads include:
 
@@ -44,13 +45,13 @@ Observed skill loads MUST be represented on `tool` spans.
 | --- | --- | --- | --- |
 | `span_attributes.type` | string | MUST | Set to `"tool"`. |
 | `span_attributes.name` | string | SHOULD | Prefer `skill: <skill_name>` when the skill name is known. Otherwise use a stable tool span name. |
-| `metadata.tool_name` | string | MUST | Set to `"skill"` for normalized skill-load spans. |
-| `metadata.original_tool_name` | string | SHOULD | The raw tool name observed from the agent when it differs from `"skill"`, such as `"read"`, `"Skill"`, or `"exec_command"`. |
+| `metadata.tool_name` | string | MUST | Preserve the raw tool name observed from the agent, such as `"read"`, `"Skill"`, `"skill"`, or `"exec_command"`. |
+| `metadata.tool_kind` | string | MUST | Set to `"skill"` for observed skill-load spans. |
 
-Normalizing `metadata.tool_name` to `"skill"` lets downstream systems query for
-observed skill loads consistently across agents even when the underlying event
-was a generic read or command tool. Preserve the raw tool name in
-`metadata.original_tool_name` so the original agent event remains inspectable.
+Preserving `metadata.tool_name` keeps the raw agent event inspectable and avoids
+assigning cross-agent semantics to tool-name strings. Use
+`metadata.tool_kind = "skill"` as the canonical discriminator for observed skill
+loads, including when the underlying event was a generic read or command tool.
 
 ### Metadata
 
@@ -72,7 +73,7 @@ explicit user skill request, it SHOULD omit `metadata.skill_load_trigger`. The
 missing field is interpreted as `"implicit"`.
 
 If an integration cannot determine the skill name but can still observe a real
-skill load, it MUST still emit `metadata.tool_name = "skill"` and SHOULD use a
+skill load, it MUST still emit `metadata.tool_kind = "skill"` and SHOULD use a
 stable skill span name such as `"skill"`.
 
 When the observed agent event exposes the loaded skill content, integrations
@@ -141,7 +142,8 @@ For script-based detection:
 - The script path SHOULD be recorded as `metadata.skill_path`.
 
 When an integration cannot determine the skill name but can still observe a real
-skill load, it MUST still emit `tool_name = "skill"` and omit `skill_name`.
+skill load, it MUST still emit `metadata.tool_kind = "skill"` and omit
+`metadata.skill_name`.
 
 ## Wire format examples
 
@@ -155,8 +157,8 @@ skill load, it MUST still emit `tool_name = "skill"` and omit `skill_name`.
   },
   "output": "Review the current diff for correctness bugs...",
   "metadata": {
-    "tool_name": "skill",
-    "original_tool_name": "Skill",
+    "tool_name": "Skill",
+    "tool_kind": "skill",
     "skill_name": "review"
   }
 }
@@ -172,8 +174,8 @@ skill load, it MUST still emit `tool_name = "skill"` and omit `skill_name`.
   },
   "output": "Review the current diff for correctness bugs...",
   "metadata": {
-    "tool_name": "skill",
-    "original_tool_name": "Skill",
+    "tool_name": "Skill",
+    "tool_kind": "skill",
     "skill_name": "review",
     "skill_load_trigger": "explicit"
   }
@@ -190,8 +192,8 @@ skill load, it MUST still emit `tool_name = "skill"` and omit `skill_name`.
   },
   "output": "---\nname: review\n---\n\nReview the current diff...",
   "metadata": {
-    "tool_name": "skill",
-    "original_tool_name": "read",
+    "tool_name": "read",
+    "tool_kind": "skill",
     "skill_name": "review",
     "skill_path": "/home/user/.agents/skills/review/SKILL.md"
   }
@@ -225,7 +227,7 @@ skill load, it MUST still emit `tool_name = "skill"` and omit `skill_name`.
 The canonical filter for observed skill-load tool spans is:
 
 ```text
-span_attributes.type = "tool" AND metadata.tool_name = "skill"
+span_attributes.type = "tool" AND metadata.tool_kind = "skill"
 ```
 
 For skill-load tool spans, treat missing `metadata.skill_load_trigger` as
@@ -239,7 +241,7 @@ metadata.loaded_skill_names IS NOT NULL OR metadata.loaded_skills IS NOT NULL
 
 To identify all skill participation in a conversation, query both surfaces:
 
-- observed loads from normalized skill tool spans, grouped by
+- observed loads from skill-load tool spans, grouped by
   `metadata.skill_name`; use `metadata.skill_load_trigger` to split explicit
   sourced loads from implicit/default loads
 - explicit parsed requests from message or turn spans, grouped by
@@ -249,4 +251,4 @@ Message or turn spans with `loaded_*` metadata are explicit parsed requests.
 Skill tool spans are observed loads; they are implicit by default unless
 `metadata.skill_load_trigger = "explicit"` says the load was sourced from an
 explicit request. To inspect the raw load event, use
-`metadata.original_tool_name`.
+`metadata.tool_name`.
