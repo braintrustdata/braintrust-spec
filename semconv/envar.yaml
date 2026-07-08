@@ -36,3 +36,13 @@ config_envars:
     required: false
     env_braintrust: true
     documentation: Organization name to use when logging in. Useful when account has multiple organizations.
+
+  - name: BRAINTRUST_ENVIRONMENT_TYPE
+    required: false
+    env_braintrust: true
+    documentation: Optional explicit span origin environment type. When set, SDKs use this value for context.span_origin.environment.type instead of automatic environment detection.
+
+  - name: BRAINTRUST_ENVIRONMENT_NAME
+    required: false
+    env_braintrust: true
+    documentation: Optional explicit normalized span origin environment name. When set, SDKs use this value for context.span_origin.environment.name instead of automatic environment detection.
