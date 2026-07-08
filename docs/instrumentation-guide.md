@@ -1025,10 +1025,8 @@ Braintrust also consumes the standard OTel code attributes for caller location:
 | Attribute                 | Type   | Location       | Description                                                                                                                          |
 | ------------------------- | ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `braintrust.context_json` | string | Span attribute | JSON-encoded context object. Extracted into the `context` field of the log row and deep-merged with backend-derived OTel provenance. |
-| `braintrust.sdk.name`     | string | Resource attr  | Braintrust SDK package/exporter name that emitted or exported the span. Extracted into `context.span_origin.name`.                   |
-| `braintrust.sdk.version`  | string | Resource attr  | Braintrust SDK package/exporter version. Extracted into `context.span_origin.version`.                                               |
 
-When `braintrust.sdk.*` resource attributes are present, ingestion MUST populate `context.span_origin.name` and `context.span_origin.version` from them. Otherwise, ingestion SHOULD derive `context.span_origin.name` and `context.span_origin.version` from OTel `telemetry.sdk.name` and `telemetry.sdk.version` resource attributes.
+SDKs and exporters SHOULD encode Braintrust span-origin provenance in `braintrust.context_json` as `context.span_origin`. Ingestion MUST use those explicit `context.span_origin` values when present. When explicit Braintrust span-origin provenance is not provided, ingestion SHOULD derive `context.span_origin.name` and `context.span_origin.version` from OTel `telemetry.sdk.name` and `telemetry.sdk.version` resource attributes.
 
 OTLP ingestion SHOULD derive `context.span_origin.instrumentation.name` from the OTLP instrumentation scope name.
 
