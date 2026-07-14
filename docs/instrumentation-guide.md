@@ -60,7 +60,7 @@ Braintrust supports the following `span_attributes.type` values:
 | `classifier`   | A classification operation                                                    |
 | `review`       | A human review/annotation                                                     |
 
-This guide primarily concerns `llm`, `tool`, and `task` spans.
+This guide primarily concerns `llm`, `tool`, and `task` spans. Eval-specific trace shape and attributes are specified in [Eval spans](features/eval-spans.md).
 
 ### Span hierarchy
 
