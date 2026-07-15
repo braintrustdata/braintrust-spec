@@ -131,7 +131,7 @@ Braintrust-maintained SDKs, plugins, services, and exporters SHOULD use stable `
 
 When SDKs and Braintrust-internal emitters resolve `context.span_origin.environment`, they SHOULD apply this precedence:
 
-1. Caller-provided SDK option.
+1. Caller-provided SDK option. If an SDK supports an explicit null/none environment option, that value disables ambient environment detection.
 2. `BRAINTRUST_ENVIRONMENT_TYPE` / `BRAINTRUST_ENVIRONMENT_NAME`, resolved through process environment and `.env.braintrust` fallback.
 3. Trusted Braintrust Gateway/internal configuration.
 4. CI provider environment variables or generic `CI`.
@@ -139,7 +139,7 @@ When SDKs and Braintrust-internal emitters resolve `context.span_origin.environm
 6. Language or framework deployment-mode variables.
 7. Omit `environment`.
 
-SDKs SHOULD use provider-specific CI variables when present, such as `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `BUILDKITE`, `JENKINS_URL`, `JENKINS_HOME`, `TF_BUILD`, `TEAMCITY_VERSION`, `TRAVIS`, or `BITBUCKET_BUILD_NUMBER`; if only generic `CI` is present, use `type: "ci"` and `name: "ci"`. SDKs MAY identify server environments from explicit platform variables such as `VERCEL`, `NETLIFY`, `AWS_LAMBDA_FUNCTION_NAME`, Lambda `AWS_EXECUTION_ENV`, `K_SERVICE`, `FUNCTION_TARGET`, `KUBERNETES_SERVICE_HOST`, `ECS_CONTAINER_METADATA_URI`, `ECS_CONTAINER_METADATA_URI_V4`, `DYNO`, `FLY_APP_NAME`, `RAILWAY_ENVIRONMENT`, or `RENDER_SERVICE_NAME`. SDKs MAY use language/framework variables such as `NODE_ENV`, `RAILS_ENV`, `RACK_ENV`, `ASPNETCORE_ENVIRONMENT`, or `DOTNET_ENVIRONMENT` only as weaker fallback signals: production/staging values map to `server`, development/local values map to `local`, and test values SHOULD be ignored unless CI was already detected.
+SDKs SHOULD use provider-specific CI variables when present, such as `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `BUILDKITE`, `JENKINS_URL`, `JENKINS_HOME`, `TF_BUILD`, `TEAMCITY_VERSION`, `TRAVIS`, or `BITBUCKET_BUILD_NUMBER`; if only generic `CI` is present, use `type: "ci"` and `name: "ci"`. SDKs MAY identify server environments from explicit platform variables such as `VERCEL`, `NETLIFY`, `AWS_LAMBDA_FUNCTION_NAME`, Lambda-specific `AWS_EXECUTION_ENV` values such as `AWS_Lambda_*`, `K_SERVICE`, `FUNCTION_TARGET`, `KUBERNETES_SERVICE_HOST`, `ECS_CONTAINER_METADATA_URI`, `ECS_CONTAINER_METADATA_URI_V4`, ECS-specific `AWS_EXECUTION_ENV` values such as `AWS_ECS_*`, `DYNO`, `FLY_APP_NAME`, `RAILWAY_ENVIRONMENT`, or `RENDER_SERVICE_NAME`. ECS metadata variables and ECS-specific `AWS_EXECUTION_ENV` values SHOULD classify as `server/ecs` rather than `server/aws_lambda`. SDKs MAY use language/framework variables such as `NODE_ENV`, `RAILS_ENV`, `RACK_ENV`, `ASPNETCORE_ENVIRONMENT`, or `DOTNET_ENVIRONMENT` only as weaker fallback signals: production/staging values map to `server`, development/local values map to `local`, and test values SHOULD be ignored unless CI was already detected.
 
 ---
 

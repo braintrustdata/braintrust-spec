@@ -196,7 +196,9 @@ SHOULD be normalized lower-snake-case labels.
 
 Use this precedence:
 
-1. A caller-provided SDK option wins over all ambient configuration.
+1. A caller-provided SDK option wins over all ambient configuration. If an SDK
+   supports an explicit null/none environment option, that value disables
+   ambient environment detection.
 2. `BRAINTRUST_ENVIRONMENT_TYPE` and `BRAINTRUST_ENVIRONMENT_NAME`, resolved
    through process environment and `.env.braintrust` fallback, win over
    automatic detection.
@@ -216,10 +218,13 @@ Reliable CI signals include `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`,
 present but `CI` is truthy, SDKs may emit type `ci` and name `ci`.
 
 Reliable server/platform signals include `VERCEL`, `NETLIFY`,
-`AWS_LAMBDA_FUNCTION_NAME`, Lambda `AWS_EXECUTION_ENV`, `K_SERVICE`,
-`FUNCTION_TARGET`, `KUBERNETES_SERVICE_HOST`, `ECS_CONTAINER_METADATA_URI`,
-`ECS_CONTAINER_METADATA_URI_V4`, `DYNO`, `FLY_APP_NAME`,
-`RAILWAY_ENVIRONMENT`, and `RENDER_SERVICE_NAME`.
+`AWS_LAMBDA_FUNCTION_NAME`, Lambda-specific `AWS_EXECUTION_ENV` values such as
+`AWS_Lambda_*`, `K_SERVICE`, `FUNCTION_TARGET`, `KUBERNETES_SERVICE_HOST`,
+`ECS_CONTAINER_METADATA_URI`, `ECS_CONTAINER_METADATA_URI_V4`, ECS-specific
+`AWS_EXECUTION_ENV` values such as `AWS_ECS_*`, `DYNO`, `FLY_APP_NAME`,
+`RAILWAY_ENVIRONMENT`, and `RENDER_SERVICE_NAME`. ECS metadata variables and
+ECS-specific `AWS_EXECUTION_ENV` values should classify as `server/ecs` rather
+than `server/aws_lambda`.
 
 Language/framework variables such as `NODE_ENV`, `RAILS_ENV`, `RACK_ENV`,
 `ASPNETCORE_ENVIRONMENT`, and `DOTNET_ENVIRONMENT` are weak fallback signals.
