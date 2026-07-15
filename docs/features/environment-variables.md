@@ -190,9 +190,9 @@ Braintrust configuration precedence, including `.env.braintrust` fallback:
 | `BRAINTRUST_ENVIRONMENT_TYPE`  | Explicit `context.span_origin.environment.type` value. |
 | `BRAINTRUST_ENVIRONMENT_NAME`  | Explicit `context.span_origin.environment.name` value. |
 
-The environment type SHOULD be one of `ci`, `server`, `local`, or `gateway`,
-but SDK type definitions SHOULD allow future string values. Environment names
-SHOULD be normalized lower-snake-case labels.
+The environment type SHOULD be one of `ci`, `server`, or `local`, but SDK type
+definitions SHOULD allow future string values. Environment names SHOULD be
+normalized lower-snake-case labels.
 
 Use this precedence:
 
@@ -202,15 +202,15 @@ Use this precedence:
 2. `BRAINTRUST_ENVIRONMENT_TYPE` and `BRAINTRUST_ENVIRONMENT_NAME`, resolved
    through process environment and `.env.braintrust` fallback, win over
    automatic detection.
-3. Trusted Braintrust Gateway/internal code may set `gateway`.
-4. CI provider detection wins over server and language/framework detection.
-5. Server/platform detection wins over language/framework detection.
-6. Language/framework deployment-mode detection is a fallback.
-7. If no reliable positive signal is present, omit `span_origin.environment`.
+3. CI provider detection wins over server and language/framework detection.
+4. Server/platform detection wins over language/framework detection.
+5. Language/framework deployment-mode detection is a fallback.
+6. If no reliable positive signal is present, omit `span_origin.environment`.
 
 SDKs must not infer `local` from the absence of CI or server signals.
-`gateway` is reserved for spans captured by Braintrust Gateway/internal code and
-must not be inferred automatically by SDKs or from `metadata.provider`.
+Braintrust Gateway/internal code identifies itself with a gateway span origin
+name, such as `context.span_origin.name = "braintrust.gateway"`, not with a
+special environment type.
 
 Reliable CI signals include `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`,
 `BUILDKITE`, `JENKINS_URL`, `JENKINS_HOME`, `TF_BUILD`, `TEAMCITY_VERSION`,

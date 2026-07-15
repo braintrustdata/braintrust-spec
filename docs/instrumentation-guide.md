@@ -95,7 +95,7 @@ The `context` field is an object containing textual information about the code a
 | `span_origin.name`                 | string optional | SDK, integration, Braintrust service, or exporter that emitted or exported the span           |
 | `span_origin.version`              | string optional | Version of the SDK, integration, Braintrust service, or exporter when known                  |
 | `span_origin.instrumentation.name` | string optional | Stable module, package, plugin, or OTel instrumentation scope that created the span          |
-| `span_origin.environment.type`     | string optional | Operating environment type where the span was captured: `ci`, `server`, `local`, or `gateway` |
+| `span_origin.environment.type`     | string optional | Operating environment type where the span was captured: `ci`, `server`, or `local`            |
 | `span_origin.environment.name`     | string optional | Normalized operating environment name, such as `github_actions`, `vercel`, or `development` |
 
 Braintrust-created spans MUST also include span-origin provenance. Omit fields whose values are unknown.
@@ -123,21 +123,20 @@ OTLP ingestion will map standard OTel code attributes into caller-location conte
 
 `context.span_origin` identifies the SDK, integration, service, or exporter that emitted or exported the span. For OTLP spans that do not include explicit Braintrust span-origin provenance, ingestion SHOULD set `context.span_origin.name` to `opentelemetry` and SHOULD fill `context.span_origin.version` from the OTel `telemetry.sdk.version` resource attribute when present.
 
-Braintrust-maintained SDKs, plugins, services, and exporters SHOULD use stable `span_origin.name` values under the reserved `braintrust.` prefix when they provide explicit Braintrust span-origin provenance. Braintrust SDKs SHOULD use `braintrust.sdk.<language>` names, such as `braintrust.sdk.javascript`; Braintrust plugins SHOULD use `braintrust.plugin.<plugin>` names, such as `braintrust.plugin.codex`. User code and third-party integrations SHOULD NOT use the `braintrust.` prefix for caller-provided origin names.
+Braintrust-maintained SDKs, plugins, services, and exporters SHOULD use stable `span_origin.name` values under the reserved `braintrust.` prefix when they provide explicit Braintrust span-origin provenance. Braintrust SDKs SHOULD use `braintrust.sdk.<language>` names, such as `braintrust.sdk.javascript`; Braintrust plugins SHOULD use `braintrust.plugin.<plugin>` names, such as `braintrust.plugin.codex`; Braintrust Gateway SHOULD use `braintrust.gateway`. User code and third-party integrations SHOULD NOT use the `braintrust.` prefix for caller-provided origin names.
 
 `context.span_origin.instrumentation.name` identifies the stable module, package, plugin, or OTel instrumentation scope that directly created the span. Provider/client SDKs such as `openai` or `anthropic` are not the span origin and SHOULD continue to appear in `metadata.provider` when provider metadata is available.
 
-`context.span_origin.environment` identifies the operating environment where the span was captured. The `type` field SHOULD be one of `ci`, `server`, `local`, or `gateway`; SDK type definitions SHOULD allow future string values. The `name` field is optional and SHOULD be a normalized lower-snake-case label. Emit this object only when the value comes from an explicit override or a reliable positive signal; do not infer `local` from the absence of CI or server signals. SDKs MUST NOT automatically classify spans as `gateway`; `gateway` is reserved for spans captured by Braintrust Gateway/internal code and MUST NOT be inferred from `metadata.provider`.
+`context.span_origin.environment` identifies the operating environment where the span was captured. The `type` field SHOULD be one of `ci`, `server`, or `local`; SDK type definitions SHOULD allow future string values. The `name` field is optional and SHOULD be a normalized lower-snake-case label. Emit this object only when the value comes from an explicit override or a reliable positive signal; do not infer `local` from the absence of CI or server signals. Gateway identity belongs in `context.span_origin.name`, not in `context.span_origin.environment.type`.
 
 When SDKs and Braintrust-internal emitters resolve `context.span_origin.environment`, they SHOULD apply this precedence:
 
 1. Caller-provided SDK option. If an SDK supports an explicit null/none environment option, that value disables ambient environment detection.
 2. `BRAINTRUST_ENVIRONMENT_TYPE` / `BRAINTRUST_ENVIRONMENT_NAME`, resolved through process environment and `.env.braintrust` fallback.
-3. Trusted Braintrust Gateway/internal configuration.
-4. CI provider environment variables or generic `CI`.
-5. Server/platform environment variables.
-6. Language or framework deployment-mode variables.
-7. Omit `environment`.
+3. CI provider environment variables or generic `CI`.
+4. Server/platform environment variables.
+5. Language or framework deployment-mode variables.
+6. Omit `environment`.
 
 SDKs SHOULD use provider-specific CI variables when present, such as `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `BUILDKITE`, `JENKINS_URL`, `JENKINS_HOME`, `TF_BUILD`, `TEAMCITY_VERSION`, `TRAVIS`, or `BITBUCKET_BUILD_NUMBER`; if only generic `CI` is present, use `type: "ci"` and `name: "ci"`. SDKs MAY identify server environments from explicit platform variables such as `VERCEL`, `NETLIFY`, `AWS_LAMBDA_FUNCTION_NAME`, Lambda-specific `AWS_EXECUTION_ENV` values such as `AWS_Lambda_*`, `K_SERVICE`, `FUNCTION_TARGET`, `KUBERNETES_SERVICE_HOST`, `ECS_CONTAINER_METADATA_URI`, `ECS_CONTAINER_METADATA_URI_V4`, ECS-specific `AWS_EXECUTION_ENV` values such as `AWS_ECS_*`, `DYNO`, `FLY_APP_NAME`, `RAILWAY_ENVIRONMENT`, or `RENDER_SERVICE_NAME`. ECS metadata variables and ECS-specific `AWS_EXECUTION_ENV` values SHOULD classify as `server/ecs` rather than `server/aws_lambda`. SDKs MAY use language/framework variables such as `NODE_ENV`, `RAILS_ENV`, `RACK_ENV`, `ASPNETCORE_ENVIRONMENT`, or `DOTNET_ENVIRONMENT` only as weaker fallback signals: production/staging values map to `server`, development/local values map to `local`, and test values SHOULD be ignored unless CI was already detected.
 
@@ -1046,17 +1045,15 @@ Braintrust also consumes the standard OTel code attributes for caller location:
 
 | Attribute                 | Type   | Location       | Description                                                                                                                          |
 | ------------------------- | ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `braintrust.context_json` | string | Span attribute | JSON-encoded context object. Extracted into the `context` field of the log row and deep-merged with backend-derived OTel provenance. |
-| `braintrust.environment.type` | string | Resource or span attr | Operating environment type where the span was captured. Extracted into `context.span_origin.environment.type`. |
-| `braintrust.environment.name` | string | Resource or span attr | Normalized operating environment name. Extracted into `context.span_origin.environment.name`. |
+| `braintrust.context_json` | string | Span attribute | JSON-encoded context object. Extracted into the `context` field of the log row and deep-merged with backend-derived OTel provenance. SDK/exporter-provided span-origin environment provenance is encoded inside this object as `context.span_origin.environment`. |
 
 SDKs and exporters SHOULD encode Braintrust span-origin provenance in `braintrust.context_json` as `context.span_origin`. Ingestion MUST use those explicit `context.span_origin` values when present. When explicit Braintrust span-origin provenance is not provided on an OTLP span, ingestion SHOULD set `context.span_origin.name` to `opentelemetry` and SHOULD derive `context.span_origin.version` from the OTel `telemetry.sdk.version` resource attribute when present.
 
 OTLP ingestion SHOULD derive `context.span_origin.instrumentation.name` from the OTLP instrumentation scope name.
 
-OTLP ingestion SHOULD derive `context.span_origin.environment.type` and `context.span_origin.environment.name` from `braintrust.environment.type` and `braintrust.environment.name` resource attributes when present. If the SDK or instrumentation cannot set resource attributes, it MAY set the same attributes on individual spans. Explicit values in `braintrust.context_json` MUST win over backend-derived environment values.
+SDKs and exporters MUST NOT emit environment provenance as standalone `braintrust.environment.*` resource or span attributes. If environment provenance is known, encode it inside `braintrust.context_json` as `context.span_origin.environment`.
 
-Braintrust-internal OTLP ingest MAY derive `context.span_origin.environment.type = "gateway"` and `context.span_origin.environment.name = "braintrust_gateway"` from trusted Braintrust Gateway resource identity, such as the gateway service resource. SDKs and general OTLP ingest MUST NOT infer this gateway classification from public span attributes, routes, model/provider metadata, or `metadata.provider`.
+Braintrust Gateway/internal OTLP emitters SHOULD set `context.span_origin.name = "braintrust.gateway"` in `braintrust.context_json`. They SHOULD include `context.span_origin.environment` only when there is separate runtime context worth recording, such as a server platform or CI environment. SDKs and general OTLP ingest MUST NOT infer gateway identity from public span attributes, routes, model/provider metadata, or `metadata.provider`.
 
 ### Span content
 
