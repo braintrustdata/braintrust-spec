@@ -192,7 +192,9 @@ Braintrust configuration precedence, including `.env.braintrust` fallback:
 
 The environment type SHOULD be one of `ci`, `server`, or `local`, but SDK type
 definitions SHOULD allow future string values. Environment names SHOULD be
-normalized lower-snake-case labels.
+normalized lower-snake-case labels. `BRAINTRUST_ENVIRONMENT_TYPE` and
+`BRAINTRUST_ENVIRONMENT_NAME` are independent overrides; if only one is set,
+SDKs SHOULD preserve that field and omit the unknown field.
 
 Use this precedence:
 
