@@ -360,6 +360,7 @@ Every expected LLM span asserts span-origin provenance in `context`:
 
 - `context.span_origin.name` and `context.span_origin.version` MUST be non-empty strings.
 - `context.span_origin.instrumentation.name` MUST identify the stable instrumentation module, package, plugin, or OTel instrumentation scope that created the span.
+- `context.span_origin.environment` is optional. When present, `type` SHOULD identify the operating environment where the span was captured (`ci`, `server`, or `local`), and `name` SHOULD be a normalized lower-snake-case label. Gateway identity should be represented by `context.span_origin.name`, for example `braintrust.gateway`.
 
 Implementations MAY include additional context fields, including caller-location fields; recursive validation ignores extra keys.
 

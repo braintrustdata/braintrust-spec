@@ -101,14 +101,16 @@ SDKs may read only variables explicitly marked with `env_braintrust: true` in
 
 The current `.env.braintrust` allowlist is:
 
-| Variable                | Purpose                                          |
-| ----------------------- | ------------------------------------------------ |
-| `BRAINTRUST_API_KEY`    | API key for authentication with Braintrust.      |
-| `BRAINTRUST_APP_URL`    | Base URL for the Braintrust web application.     |
-| `BRAINTRUST_API_URL`    | Base URL for the Braintrust API.                 |
-| `BRAINTRUST_PROJECT`    | Project name for Braintrust logging and tracing. |
-| `BRAINTRUST_PROJECT_ID` | Project ID for logging spans.                    |
-| `BRAINTRUST_ORG_NAME`   | Organization name to use when logging in.        |
+| Variable                       | Purpose                                          |
+| ------------------------------ | ------------------------------------------------ |
+| `BRAINTRUST_API_KEY`           | API key for authentication with Braintrust.      |
+| `BRAINTRUST_APP_URL`           | Base URL for the Braintrust web application.     |
+| `BRAINTRUST_API_URL`           | Base URL for the Braintrust API.                 |
+| `BRAINTRUST_PROJECT`           | Project name for Braintrust logging and tracing. |
+| `BRAINTRUST_PROJECT_ID`        | Project ID for logging spans.                    |
+| `BRAINTRUST_ORG_NAME`          | Organization name to use when logging in.        |
+| `BRAINTRUST_ENVIRONMENT_TYPE`  | Explicit span-origin environment type.           |
+| `BRAINTRUST_ENVIRONMENT_NAME`  | Explicit span-origin environment name.           |
 
 If `.env.braintrust` contains other names, SDKs must ignore them. They must not
 expose ignored values through SDK config APIs or process-environment helpers.
@@ -164,6 +166,73 @@ the caller explicitly supplies a cancellation token or timeout.
 SDKs may start candidate file reads in parallel, but must still preserve
 nearest-file-wins semantics. A higher parent may only win after all closer
 candidates are known to be missing.
+
+## Span origin environment
+
+SDKs MAY populate `context.span_origin.environment` to identify the operating
+environment where a span was captured. This is provenance about the caller's
+runtime, not the Braintrust API or app URL environment.
+
+SDKs SHOULD support explicit caller options equivalent to:
+
+```json
+{
+  "type": "ci",
+  "name": "github_actions"
+}
+```
+
+SDKs SHOULD also support environment-variable overrides through the normal
+Braintrust configuration precedence, including `.env.braintrust` fallback:
+
+| Variable                       | Purpose                                                |
+| ------------------------------ | ------------------------------------------------------ |
+| `BRAINTRUST_ENVIRONMENT_TYPE`  | Explicit `context.span_origin.environment.type` value. |
+| `BRAINTRUST_ENVIRONMENT_NAME`  | Explicit `context.span_origin.environment.name` value. |
+
+The environment type SHOULD be one of `ci`, `server`, or `local`, but SDK type
+definitions SHOULD allow future string values. Environment names SHOULD be
+normalized lower-snake-case labels. `BRAINTRUST_ENVIRONMENT_TYPE` and
+`BRAINTRUST_ENVIRONMENT_NAME` are independent overrides; if only one is set,
+SDKs SHOULD preserve that field and omit the unknown field.
+
+Use this precedence:
+
+1. A caller-provided SDK option wins over all ambient configuration. If an SDK
+   supports an explicit null/none environment option, that value disables
+   ambient environment detection.
+2. `BRAINTRUST_ENVIRONMENT_TYPE` and `BRAINTRUST_ENVIRONMENT_NAME`, resolved
+   through process environment and `.env.braintrust` fallback, win over
+   automatic detection.
+3. CI provider detection wins over server and language/framework detection.
+4. Server/platform detection wins over language/framework detection.
+5. Language/framework deployment-mode detection is a fallback.
+6. If no reliable positive signal is present, omit `span_origin.environment`.
+
+SDKs must not infer `local` from the absence of CI or server signals.
+Braintrust Gateway/internal code identifies itself with a gateway span origin
+name, such as `context.span_origin.name = "braintrust.gateway"`, not with a
+special environment type.
+
+Reliable CI signals include `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`,
+`BUILDKITE`, `JENKINS_URL`, `JENKINS_HOME`, `TF_BUILD`, `TEAMCITY_VERSION`,
+`TRAVIS`, and `BITBUCKET_BUILD_NUMBER`. If no provider-specific signal is
+present but `CI` is truthy, SDKs may emit type `ci` and name `ci`.
+
+Reliable server/platform signals include `VERCEL`, `NETLIFY`,
+`AWS_LAMBDA_FUNCTION_NAME`, Lambda-specific `AWS_EXECUTION_ENV` values such as
+`AWS_Lambda_*`, `K_SERVICE`, `FUNCTION_TARGET`, `KUBERNETES_SERVICE_HOST`,
+`ECS_CONTAINER_METADATA_URI`, `ECS_CONTAINER_METADATA_URI_V4`, ECS-specific
+`AWS_EXECUTION_ENV` values such as `AWS_ECS_*`, `DYNO`, `FLY_APP_NAME`,
+`RAILWAY_ENVIRONMENT`, and `RENDER_SERVICE_NAME`. ECS metadata variables and
+ECS-specific `AWS_EXECUTION_ENV` values should classify as `server/ecs` rather
+than `server/aws_lambda`.
+
+Language/framework variables such as `NODE_ENV`, `RAILS_ENV`, `RACK_ENV`,
+`ASPNETCORE_ENVIRONMENT`, and `DOTNET_ENVIRONMENT` are weak fallback signals.
+Map `production`, `prod`, `staging`, and `stage` to type `server`; map
+`development`, `dev`, and `local` to type `local`; ignore `test` unless a
+CI signal already classified the environment.
 
 ### Dotenv parsing
 
