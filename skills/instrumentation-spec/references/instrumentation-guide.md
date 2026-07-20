@@ -705,6 +705,12 @@ Each tool execution MUST produce a child `tool` span with:
 - **Input**: The arguments the model provided for the tool call
 - **Output**: The return value of the tool execution
 
+Tool spans SHOULD emit `metadata.tool_approval` when the integration can
+reliably determine whether the tool interaction was approved or denied. Failed
+tool calls are represented by a non-null top-level `error` value. See
+[Tool approval metadata](features/tool-approval-metadata.md) for the normalized
+values and omission semantics.
+
 ### Ordering
 
 Child spans MUST reflect the actual execution order. In a typical agentic loop:
