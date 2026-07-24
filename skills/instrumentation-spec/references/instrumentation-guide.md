@@ -81,7 +81,7 @@ The `metrics` field is an object of string keys to numeric values. Instrumentati
 | `prompt_tokens`       | Input/prompt token count (LLM spans)                                                 |
 | `completion_tokens`   | Output/completion token count (LLM spans)                                            |
 | `tokens`              | Total token count (LLM spans)                                                        |
-| `time_to_first_token` | Seconds from request start to the first generated token or chunk                     |
+| `time_to_first_token` | Seconds from request start to the first content-bearing output event                  |
 
 ### Context
 
@@ -641,14 +641,17 @@ Instrumentation MUST merge `metadata.prompt` with other span metadata such as `p
 
 ### Metadata
 
-Every LLM span MUST include:
+Every generative LLM span MUST include:
 
 | Field      | Description                                                          | Example                  |
 | ---------- | -------------------------------------------------------------------- | ------------------------ |
 | `model`    | The resolved model identifier as returned by the API                 | `gpt-4o-mini-2024-07-18` |
 | `provider` | The provider, gateway, or reseller whose pricing applies to the call | `openai`                 |
 
-The `model` field SHOULD use the model string from the API response (which may include a version suffix) rather than the string the user passed in the request. The `provider` field is required even when model names are globally recognizable, because gateways and resellers can price the same model differently.
+Embedding spans SHOULD include `model` and `provider`; see
+[Embeddings](features/embeddings.md#span-model).
+
+The `model` field SHOULD use the model string from the API response (which may include a version suffix) rather than the string the user passed in the request. The `provider` field is required on generative spans even when model names are globally recognizable, because gateways and resellers can price the same model differently.
 
 Instrumentation MAY include only the following LLM request configuration fields in metadata when they are present and JSON-serializable: `temperature`, `top_p`, `max_tokens`, `frequency_penalty`, `presence_penalty`, `stop`, and `response_format`.
 
@@ -761,9 +764,9 @@ The SDK MUST accumulate streamed chunks and produce a single complete `input` an
 
 | Metric                | Type   | Description                                                 |
 | --------------------- | ------ | ----------------------------------------------------------- |
-| `time_to_first_token` | number | Seconds from request initiation to the first chunk received |
+| `time_to_first_token` | number | Seconds from request initiation to first content received   |
 
-This metric MUST be captured for all streaming calls. It is measured by the SDK, not reported by the provider.
+This metric MUST be captured for all streaming calls. It is measured by the SDK, not reported by the provider. Provider acknowledgements, handshake messages, usage-only events, and other control chunks do not count as content. Text, audio, image, and video output chunks do.
 
 ### Token counts from stream metadata
 
@@ -816,6 +819,11 @@ When a multi-turn conversation includes prior reasoning output, the full context
 ## Multimodal / Attachments
 
 When an instrumented request or response contains inline binary media (images, PDFs, audio, video, etc.), SDKs MUST replace the raw media with Braintrust attachment references inside the log row's `input` or `output` payload. Do not add a separate attachment list. The lower-level scan, upload, retry, and fallback behavior is specified in [Attachments](features/attachments.md).
+
+Dedicated image, audio, OCR, video, and prediction endpoints follow
+[Multimodal API surfaces](features/multimodal-api-surfaces.md). Embedding APIs
+follow [Embeddings](features/embeddings.md). Long-lived bidirectional sessions
+follow [Realtime and live APIs](features/realtime.md).
 
 Attachment conversion is both a storage optimization and a display requirement. When conversion succeeds, raw media bytes MUST NOT remain inline in `input` or `output`. If conversion or upload fails, instrumentation MUST preserve the original payload and MUST NOT throw an exception that prevents span export.
 
@@ -927,27 +935,35 @@ The same attachment rules apply to generated media in `output`. Generated media 
 - Text-to-speech: log input text as normal request input and log generated audio as an attachment.
 - Video generation and other long-running media operations: when the wrapper waits or polls for completion, log the initial request and final media result on the `llm` span. If the wrapper only starts an operation, log the provider operation ID and status when available at return time.
 
+Binary return values and one-shot response streams MUST preserve the
+application-visible provider value and follow
+[Binary output values and streams](features/attachments.md#binary-output-values-and-streams).
+
 ### Streaming multimodal outputs
 
 Streaming instrumentation MUST aggregate media chunks into the final `output` rather than dropping them or logging raw chunks as separate opaque blobs. The final span output SHOULD contain the same attachment-normalized shape as a non-streaming response.
 
 - Inline media output parts MUST be accumulated and converted to image or file attachments.
-- Streaming audio chunks SHOULD be aggregated into transcript/audio output. If binary audio data is retained, it MUST be converted to an attachment.
+- Provider-supplied transcript and text chunks MUST be aggregated in order.
+- Streaming audio chunks MUST be aggregated into transcript/audio output. If binary audio data is retained, it MUST be converted to an attachment.
 - `time_to_first_token` and other streaming metrics remain computed from the stream timing even when final media attachment conversion happens at the end of the stream.
 
 ### Multimodal API surfaces
 
-These API families SHOULD follow the same attachment rules even when they are not chat/message APIs. SDK support may be phased in over time; this table defines the desired instrumentation shape without prescribing provider-specific APIs.
+These API families follow the same attachment rules even when they are not
+chat/message APIs. SDK support may be phased in over time. The advisory
+provider method registry and normative specialized payload shapes are defined
+in [Multimodal API surfaces](features/multimodal-api-surfaces.md).
 
 | API family                              | Span shape                                                                                                                                                                  |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Image generation / editing              | One `llm` span per model execution. Input prompt/reference images are logged in `input`; generated images are attachments in `output`.                                      |
-| Video generation                        | One `llm` span for the operation observed by the wrapper. Inputs and final video artifacts use attachments; operation IDs/status remain in metadata or output.              |
-| Audio transcription / speech generation | Speech-to-text attaches input audio and logs transcript output. Text-to-speech logs text input and attaches generated audio output.                                         |
-| OCR / document understanding            | Attach input documents/images and log extracted text/structured page data as JSON.                                                                                          |
-| Multimodal embeddings                   | For now, only track token metrics when the provider reports them. Detailed multimodal embedding payload conventions are still a separate TODO.                              |
-| Realtime / live APIs                    | Use a parent `task` span for the session with child spans for model turns, media exchanges, and tool calls. Detailed event lifecycle conventions are still a separate TODO. |
-| Prediction-style model runner APIs      | Log provider-native input/output JSON, converting any media fields with inline bytes/base64/data URLs into attachments.                                                     |
+| Image generation / editing              | One `llm` span per model execution; prompts/reference images are input and generated images are output attachments.                                                         |
+| Video generation                        | One `llm` span for the operation observed by the wrapper; operation IDs/status represent enqueue-only calls.                                                               |
+| Audio transcription / speech generation | Speech-to-text attaches input audio and logs structured transcript output; text-to-speech logs text input and generated audio.                                              |
+| OCR / document understanding            | Attach input documents/images and log extracted text, structured pages, and returned page images.                                                                          |
+| Embeddings                              | Use the canonical embedding input and vector-summary output, including attachment-normalized multimodal inputs.                                                            |
+| Realtime / live APIs                    | Use a parent session `task` span and one child `llm` span per model response; aggregate per-turn media rather than transport chunks.                                         |
+| Prediction-style model runner APIs      | Use the canonical specialized media payload unless an explicit Braintrust UI normalizer supports the provider-native shape.                                                |
 
 ---
 
@@ -991,7 +1007,7 @@ LangChain may add its own intermediate spans (e.g. for chain steps, retrievers).
 
 ### Vercel AI SDK
 
-Instrument calls through the Vercel AI SDK's `generateText`, `streamText`, and related functions. Attribute prefix: `ai.*`. When tools are provided, these become agentic calls and MUST produce the full span tree.
+Instrument calls through the Vercel AI SDK's `generateText`, `streamText`, and related functions. Attribute prefix: `ai.*`. When tools are provided, these become agentic calls and MUST produce the full span tree. `generateImage` follows [Multimodal API surfaces](features/multimodal-api-surfaces.md).
 
 ---
 
@@ -1003,10 +1019,10 @@ Instrumentation MUST only emit the metric keys listed in this guide. The followi
 | --------------------------------- | ------ | ---------------- | -------- | ------------------------------------------------ |
 | `start`                           | number | All spans        | MUST     | Unix timestamp when the span started             |
 | `end`                             | number | All spans        | MUST     | Unix timestamp when the span ended               |
-| `tokens`                          | number | All LLM spans    | MUST     | Total tokens (prompt + completion)               |
-| `prompt_tokens`                   | number | All LLM spans    | MUST     | Input / prompt tokens                            |
-| `completion_tokens`               | number | All LLM spans    | MUST     | Output / completion tokens                       |
-| `time_to_first_token`             | number | Streaming spans  | MUST     | Seconds from request start to first chunk        |
+| `tokens`                          | number | LLM spans        | MUST\*   | Total tokens when the total is known             |
+| `prompt_tokens`                   | number | LLM spans        | MUST\*   | Input / prompt tokens                            |
+| `completion_tokens`               | number | Generative LLM spans | MUST\* | Output / completion tokens                    |
+| `time_to_first_token`             | number | Streaming spans  | MUST     | Seconds from request start to first content      |
 | `completion_reasoning_tokens`     | number | Reasoning models | MUST\*   | Tokens used for model reasoning                  |
 | `prompt_cached_tokens`            | number | Cached responses | SHOULD   | Tokens read from provider cache                  |
 | `prompt_cache_creation_tokens`    | number | Cached responses | SHOULD   | Tokens written to provider cache                 |
@@ -1017,9 +1033,16 @@ Instrumentation MUST only emit the metric keys listed in this guide. The followi
 | `completion_image_tokens`         | number | Image models     | SHOULD   | Output image tokens reported by provider         |
 | `estimated_cost`                  | number | LLM spans        | MAY      | Explicit per-span total estimated cost in dollars |
 
-\* MUST be captured when the provider reports it; not all providers/models support reasoning tokens.
+\* Usage metrics MUST be captured when the provider reports them or the SDK can
+compute them accurately. Missing values MUST be omitted rather than fabricated.
+This also applies to reasoning-token metrics, which are not reported by every
+provider/model.
 
 SDKs MUST NOT add metrics beyond the keys listed in this guide. Add new metric keys to this specification before emitting them.
+
+Embedding spans are the exception to the generative token requirements above:
+they emit `prompt_tokens` and `tokens` only when reported and MUST omit
+`completion_tokens`. See [Embeddings](features/embeddings.md#metrics).
 
 ---
 
@@ -1096,6 +1119,4 @@ For backward compatibility, the ingestion pipeline also accepts the non-`_json` 
 
 The following areas still need to be specified:
 
-- **Embedding APIs** — instrumentation for embedding endpoints (e.g. OpenAI `embeddings.create`, Google `embedContent`), including input/output structure, token metrics
-- **Realtime APIs** — detailed instrumentation for realtime/WebSocket-based APIs (e.g. OpenAI Realtime API), including event lifecycle, session finalization, and interruption/cancellation behavior
 - **Reranking APIs** — instrumentation for reranking endpoints (e.g. Cohere `rerank`, Jina Reranker), including input/output structure and relevance score metrics

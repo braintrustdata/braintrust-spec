@@ -78,6 +78,11 @@ OpenAI-style content parts place image data under `image_url.url`, file data und
 
 Generated-image output items may contain base64 image data in result fields such as `image_generation_call.result`. Replace the raw result leaf with the attachment reference and preserve compact sibling metadata.
 
+Streaming chat audio may arrive as ordered deltas containing an audio ID,
+transcript text, base64 data, and expiry metadata. Preserve the complete
+transcript and audio attachment in the final output. Do not log one attachment
+per delta.
+
 #### Bedrock (Converse API)
 
 Bedrock wraps attachments in a parent block with a type key (`image`, `document`, `video`, `audio`) containing `{"format": "<ext>", "source": {"bytes": "<base64>"}}`. The same `format` string (e.g. `mp4`) can appear in different block types and must resolve to different MIME types (`video/mp4` vs `audio/mp4`). Use the parent block type key to select the correct format-to-MIME mapping. Do not use a single flat format-to-MIME table.
@@ -91,6 +96,37 @@ Anthropic encodes inline attachments as `{"type": "base64", "media_type": "<mime
 Gemini uses `{"inlineData": {"mimeType": "<mime>", "data": "<base64>"}}` or the snake_case equivalent `{"inline_data": {"mime_type": "<mime>", "data": "<base64>"}}`. The replacement depends on content type:
 - **Images** (`image/*`): replace `inlineData`/`inline_data` with `image_url: {url: <ref>}`
 - **Non-images**: replace `inlineData`/`inline_data` with `file: {file_data: <ref>}`
+
+## binary output values and streams
+
+Specialized media APIs may return binary output directly rather than embedding
+base64 in a JSON response. Common forms include:
+
+- `Blob` or file-like objects
+- byte buffers, typed arrays, and array buffers
+- fetch `Response` objects
+- Node or Web readable streams
+
+The same attachment contract applies to these values. The logged output uses
+the canonical media shape from
+[Multimodal API surfaces](multimodal-api-surfaces.md), while the value returned
+to application code retains the provider SDK's public type and behavior.
+
+### buffered values
+
+For an already-buffered value, instrumentation may read or clone the bytes,
+enqueue the attachment upload, and return the original provider value. It
+**MUST NOT** detach, transfer, mutate, or consume the caller's buffer.
+
+Content type and filename are selected in this order:
+
+1. provider-supplied content type and filename
+2. HTTP response headers or file-like object metadata
+3. request output-format configuration
+4. an unambiguous provider method default
+
+If content type still cannot be determined, leave the value unconverted. Do
+not sniff arbitrary binary data solely for tracing.
 
 ### upload flow
 

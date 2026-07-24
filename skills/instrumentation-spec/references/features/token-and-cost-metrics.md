@@ -4,17 +4,26 @@ This spec defines the token and cost fields Braintrust SDKs must emit for LLM sp
 
 ## Span identity
 
-Every LLM span MUST include:
+Every LLM span identifies itself as a model-call span. Generative LLM spans
+MUST include model and provider; embedding spans SHOULD include them.
 
 | Field | Type | Required | Semantics |
 | --- | --- | --- | --- |
 | `span_attributes.type` | string | MUST | Set to `"llm"` for model-call spans. |
-| `metadata.model` | string | MUST | The resolved model identifier for the call, preferably the model string returned by the provider. |
-| `metadata.provider` | string | MUST | The provider, gateway, or reseller whose pricing applies to the call. |
+| `metadata.model` | string | MUST for generative spans; SHOULD for embeddings | The resolved model identifier for the call, preferably the model string returned by the provider. |
+| `metadata.provider` | string | MUST for generative spans; SHOULD for embeddings | The provider, gateway, or reseller whose pricing applies to the call. |
 
-`metadata.provider` is required even when a model name appears globally unique. Resellers and gateways can sell the same model at different prices, and provider is the minimum field needed to attribute cost to the pricing surface actually used.
+`metadata.provider` is required on generative spans even when a model name
+appears globally unique. Resellers and gateways can sell the same model at
+different prices, and provider is the minimum field needed to attribute cost
+to the pricing surface actually used.
 
-When the backend computes estimated cost from registry pricing, current cost lookup is model-driven. SDKs MUST still emit `metadata.provider` so provider-specific and reseller-specific pricing can be attributed correctly. If the exact applicable price is known to the SDK but is not representable by registry pricing, emit `metrics.estimated_cost`.
+When the backend computes estimated cost from registry pricing, current cost
+lookup is model-driven. SDKs MUST still emit `metadata.provider` on generative
+spans and SHOULD emit it on embedding spans so provider-specific and
+reseller-specific pricing can be attributed correctly. If the exact applicable
+price is known to the SDK but is not representable by registry pricing, emit
+`metrics.estimated_cost`.
 
 ## Canonical metrics
 
@@ -30,10 +39,21 @@ All token counts MUST be non-negative integers. Omit a metric when the provider 
 | `prompt_cache_creation_5m_tokens` | integer | SHOULD when reported | Prompt cache-write tokens for a 5-minute TTL bucket. This is a breakdown or alternative representation of cache creation tokens, not an additional token class. |
 | `prompt_cache_creation_1h_tokens` | integer | SHOULD when reported | Prompt cache-write tokens for a 1-hour TTL bucket. This is a breakdown or alternative representation of cache creation tokens, not an additional token class. |
 | `completion_reasoning_tokens` | integer | MUST when reported | Tokens used for model reasoning. These are usage diagnostics and are not separately costed by the current estimated-cost formula. |
-| `time_to_first_token` | number | MUST for streaming spans | Seconds from request start to first streamed token or chunk. |
+| `prompt_audio_tokens` | integer | SHOULD when reported | Input audio tokens. These are a subset of `prompt_tokens`, not additional tokens. |
+| `completion_audio_tokens` | integer | SHOULD when reported | Output audio tokens. These are a subset of `completion_tokens`, not additional tokens. |
+| `completion_image_tokens` | integer | SHOULD when reported | Output image tokens. These are a subset of `completion_tokens`, not additional tokens. |
+| `time_to_first_token` | number | MUST for streaming spans | Seconds from request start to first content-bearing text, audio, image, or video event. |
 | `estimated_cost` | number | MAY | Explicit per-span total cost override in dollars. Must be finite. |
 
 `input_tokens`, `output_tokens`, and `total_tokens` are accepted by some OpenTelemetry ingestion adapters and normalized to `prompt_tokens`, `completion_tokens`, and `tokens`. SDKs emitting Braintrust-native metrics MUST use the canonical Braintrust names directly.
+
+Embedding spans have no generated-token component. They emit
+`prompt_tokens`/`tokens` only when reported and MUST omit
+`completion_tokens` rather than fabricate zero. See
+[Embeddings](embeddings.md#metrics).
+
+Handshake, acknowledgement, usage-only, and other control events do not
+satisfy `time_to_first_token`.
 
 ## Data required by insight
 
@@ -57,10 +77,11 @@ Parent `task` spans MAY include aggregate token metrics for display, but SDKs SH
 
 ## Cost computation semantics
 
-Braintrust estimated-cost queries use the following precedence. Cost attribution requires both
-`metadata.model` and `metadata.provider`; current registry lookup may still be model-keyed in
-some backend paths, but SDKs MUST log provider so reseller and gateway prices can be resolved
-without changing the span shape.
+Braintrust estimated-cost queries use the following precedence. Cost
+attribution requires both `metadata.model` and `metadata.provider`; current
+registry lookup may still be model-keyed in some backend paths. Generative
+spans MUST log provider and embedding spans SHOULD log it so reseller and
+gateway prices can be resolved without changing the span shape.
 
 1. If `span_attributes.purpose` is `"scorer"`, no estimated cost is returned for that span.
 2. If `metrics.estimated_cost` is present and finite, it is used as the span's total cost.
