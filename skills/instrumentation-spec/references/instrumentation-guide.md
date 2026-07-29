@@ -184,13 +184,13 @@ Completion APIs are **single request-response** calls. The user sends messages t
 
 **Examples:** OpenAI `chat.completions.create`, Anthropic `messages.create`, Google `generateContent`
 
-**Span structure:** One `llm` span per API call. Completion instrumentation does not create an agent `task` parent.
+**Span structure:** One `llm` span per API call. No child spans.
 
 ```
 llm  (Chat Completion)          ← one span, one API call
 ```
 
-If the model returns tool calls, the completion API span captures them in its output. The provider SDK does not execute those tools. However, an integration MAY observe client-side execution across calls when the response contains stable tool-call IDs and a subsequent request contains matching tool-result IDs. In that case, it MAY emit correlated client-side `tool` spans as specified in [Client-side tool execution spans](#client-side-tool-execution-spans). Braintrust's Anthropic Messages instrumentation MUST correlate standard `tool_use` and `tool_result` blocks this way.
+If the model returns tool calls, the completion API span captures them in its output, but does NOT execute them or create tool spans.
 
 ### Agentic APIs
 
@@ -212,15 +212,15 @@ task  (agent run)               ← parent span for the entire agentic operation
 
 The key differences:
 
-| Aspect                      | Completion API                                | Agentic API                       |
-| --------------------------- | --------------------------------------------- | --------------------------------- |
-| Spans per user call         | 1 LLM, plus correlated tool spans when known  | 1 parent + N children             |
-| Parent span type            | —                                             | `task`                            |
-| LLM span type               | `llm`                                         | `llm` (child)                     |
-| Tool execution spans        | Optional correlated `tool` spans across calls | `tool` (child, one per tool call) |
-| Who executes tools?         | User code                                     | SDK / framework                   |
-| Tool calls in LLM output?   | Yes (for user to act on)                      | Yes (for observability)           |
-| Tool results in next input? | User's responsibility                         | SDK handles automatically         |
+| Aspect                      | Completion API           | Agentic API                       |
+| --------------------------- | ------------------------ | --------------------------------- |
+| Spans per user call         | 1                        | 1 parent + N children             |
+| Parent span type            | —                        | `task`                            |
+| LLM span type               | `llm`                    | `llm` (child)                     |
+| Tool execution spans        | None (not SDK's job)     | `tool` (child, one per tool call) |
+| Who executes tools?         | User code                | SDK / framework                   |
+| Tool calls in LLM output?   | Yes (for user to act on) | Yes (for observability)           |
+| Tool results in next input? | User's responsibility    | SDK handles automatically         |
 
 ---
 
@@ -228,7 +228,7 @@ The key differences:
 
 ### One span per API call
 
-Each discrete API call MUST produce exactly one `llm` span. A streaming call produces a single span that closes when the stream finishes, not one span per chunk. Correlated client-side `tool` spans are permitted in addition to that one LLM span; they represent user-executed work between provider calls, not additional provider calls.
+Each discrete API call MUST produce exactly one `llm` span. A streaming call produces a single span that closes when the stream finishes, not one span per chunk.
 
 ### Canonical payload format
 
@@ -336,7 +336,7 @@ Instrumentation MAY preserve Google's native `candidates` structure:
 
 ### Tool calls in completion API output
 
-When the model decides to call a tool instead of responding with text, that decision is part of the model's output. In a completion API, the provider SDK does NOT execute the tool. The user code is responsible for executing the tool and making a follow-up call. Instrumentation still records the tool-call payload in the LLM output and MAY additionally correlate the user-executed work into a `tool` span when it can observe the matching result in a later request.
+When the model decides to call a tool instead of responding with text, that decision is part of the model's output. In a completion API, the SDK does NOT execute the tool — it only records that the model asked for it. The user code is responsible for executing the tool and making a follow-up call.
 
 The exact shape of the tool-call payload depends on whether the span output uses the canonical OpenAI format or a provider-native format.
 
@@ -456,46 +456,9 @@ When the output is in Google's native format, tool calls appear as `functionCall
 
 Note that Google does not assign IDs to function calls (unlike OpenAI's `id` and Anthropic's `id`). If correlation is needed across turns, the SDK MUST generate stable IDs synthetically.
 
-### Client-side tool execution spans
-
-Completion integrations MAY correlate a model-requested tool call with the result submitted in a later provider request. This correlation observes user-executed work; it does not imply that the provider SDK executed the tool or managed an agent loop.
-
-When supported, instrumentation MUST apply the following shape and lifecycle:
-
-| Span field | Content |
-| ---------- | ------- |
-| `span_attributes.type` | `"tool"` |
-| `span_attributes.name` | Tool/function name from the model's call |
-| `input` | Arguments from the model's tool call |
-| `output` | Content from the matching tool-result message, when observed |
-| `metadata.tool_call_id` | Stable call ID, or the provider-native equivalent such as Anthropic's `metadata.tool_use_id` |
-| `error` | Non-null when the provider-native result explicitly marks the execution as failed |
-
-Lifecycle and hierarchy requirements:
-
-1. Start the `tool` span when the originating LLM response is complete and its tool call is known.
-2. Parent it to the LLM span that emitted the tool call.
-3. Keep it open while user code executes the tool.
-4. End it immediately before invoking the follow-up provider call that submits the matching result. The follow-up LLM span MUST NOT become a child of the tool span.
-5. Correlate calls and results by stable IDs, not by tool name or argument equality. Parallel calls with the same name and arguments remain distinct.
-6. If exactly one tool call is pending in the current execution context, instrumentation MAY make its span current so nested user spans naturally attach to it. It MUST NOT choose an arbitrary current span when multiple tool calls are pending.
-7. If no matching result is observed, instrumentation SHOULD end the pending span during the next uncorrelated call or integration-owned context cleanup, omitting `output`.
-
-Completion instrumentation MUST NOT add an agent `task` span merely to contain these spans. Each provider call remains its own LLM span. For example:
-
-```
-llm   "anthropic.messages.create"       output: tool_use(id=toolu_123)
-└── tool  "get_weather"                 input: {location: "Paris"}
-                                         output: {temperature: 18}
-
-llm   "anthropic.messages.create"       input: tool_result(tool_use_id=toolu_123)
-```
-
-For Anthropic Messages, standard `tool_use` response blocks and `tool_result` request blocks MUST use this lifecycle for both non-streaming and streaming calls. Server-executed Anthropic tools are already complete within one response and SHOULD continue to be logged post hoc from their paired server tool-use/result blocks.
-
 ### Tool result messages (multi-turn)
 
-When the user makes a follow-up completion API call after executing a tool, the tool's return value is sent back to the model as a message. This message is part of the **input** of the next span. Format depends on the provider convention being used. When client-side tool execution spans are enabled, the same message also closes and supplies the output of the correlated `tool` span before the next LLM span starts:
+When the user makes a follow-up completion API call after executing a tool, the tool's return value is sent back to the model as a message. This message is part of the **input** of the next span. Format depends on the provider convention being used:
 
 **OpenAI (default):**
 
