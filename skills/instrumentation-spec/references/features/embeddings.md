@@ -87,7 +87,8 @@ boundary:
 
 ## Canonical output
 
-All embedding instrumentation **MUST** emit the canonical output:
+Embedding instrumentation **MUST** emit a compact output and **MUST NOT** log
+raw vectors. Provider embedding APIs use the canonical count output:
 
 ```ts
 type EmbeddingOutput = {
@@ -97,18 +98,41 @@ type EmbeddingOutput = {
 
 `count` **MUST** equal the number of embeddings returned by the provider.
 
+Local, in-process model runners that return a tensor **MAY** instead emit a
+compact tensor-shape summary:
+
+```ts
+type LocalTensorEmbeddingOutput =
+  | { embedding_length: number }
+  | { embedding_count: number; embedding_length: number }
+  | {
+      embedding_batch_count: number;
+      embedding_count: number;
+      embedding_length: number;
+    };
+```
+
+For a one-dimensional tensor, `embedding_length` is its only dimension. For a
+two-dimensional tensor, `embedding_count` is the first dimension and
+`embedding_length` is the last dimension. For a tensor with three or more
+dimensions, `embedding_batch_count` is the first dimension,
+`embedding_count` is the second dimension, and `embedding_length` is the last
+dimension. Instrumentation **MUST** read these values from shape metadata
+exposed by the model runtime and **MUST NOT** materialize or iterate the vector
+to compute them.
+
 Instrumentation **MUST NOT** capture:
 
 - raw vector values
 - prefixes or samples of vector values
 - vector hashes
-- vector dimensions, including the actual returned dimension
+- a raw dimensions array
 - vector norms or other derived vector statistics
 
 An explicitly requested `output_dimensions` value belongs in the canonical
-input only. Provider-native embedding responses **MUST NOT** be logged.
-Non-vector provider response fields are captured only when this document
-explicitly defines them.
+input. Provider-native embedding responses **MUST NOT** be logged. Non-vector
+provider response fields are captured only when this document explicitly
+defines them.
 
 ## Metrics
 
@@ -137,6 +161,8 @@ Braintrust specification explicitly permits that behavior.
 Provider failures populate the span's top-level `error` field. If a provider
 returns partial batch results with an error, `count` **MUST** equal the number
 actually returned. If no embeddings were returned, `count` **MUST** be zero.
+For local tensor outputs, the shape summary **MUST** describe only the tensor
+actually returned.
 
 Malformed or missing provider vectors do not relax the output privacy rule:
 instrumentation **MUST NOT** log provider-native output while reporting an
@@ -148,11 +174,12 @@ SDK implementations **SHOULD** cover these scenarios in their own tests:
 
 | Scenario                                          | Expected result                                                                                                            |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Single text input                                 | One input object and `count: 1` are emitted without vector values or dimensions.                                           |
+| Single text input                                 | One input object and `count: 1` are emitted without vector values.                                                         |
 | Text batch                                        | Input objects preserve request order and `count` matches the returned batch size.                                          |
+| Local tensor output                               | The compact output reports the runtime tensor shape without vector values or a raw dimensions array.                       |
 | Aggregated text and image parts                   | One input object represents the provider's aggregation boundary.                                                           |
 | Separate image, audio, video, and document inputs | Separate ordered input objects are emitted, inline inputs become attachments, and `count` matches the returned batch size. |
-| Explicit output dimensionality                    | The requested value is captured in input without adding dimensions to output.                                              |
+| Explicit output dimensionality                    | The requested value is captured in input; local tensor runners may also report the returned shape in output.               |
 | Usage present vs. absent                          | Reported tokens are captured; unavailable metrics are omitted.                                                             |
 | Provider failure                                  | Top-level `error` is populated and provider-native output is not logged.                                                   |
 | Partial batch failure                             | `count` matches the number returned and top-level `error` is populated.                                                    |
