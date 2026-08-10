@@ -30,10 +30,16 @@ All token counts MUST be non-negative integers. Omit a metric when the provider 
 | `prompt_cache_creation_5m_tokens` | integer | SHOULD when reported | Prompt cache-write tokens for a 5-minute TTL bucket. This is a breakdown or alternative representation of cache creation tokens, not an additional token class. |
 | `prompt_cache_creation_1h_tokens` | integer | SHOULD when reported | Prompt cache-write tokens for a 1-hour TTL bucket. This is a breakdown or alternative representation of cache creation tokens, not an additional token class. |
 | `completion_reasoning_tokens` | integer | MUST when reported | Tokens used for model reasoning. These are usage diagnostics and are not separately costed by the current estimated-cost formula. |
+| `prompt_audio_tokens` | integer | SHOULD when reported | Input audio tokens. These are a subset of `prompt_tokens`, not additional tokens. |
 | `time_to_first_token` | number | MUST for streaming spans | Seconds from request start to first streamed token or chunk. |
 | `estimated_cost` | number | MAY | Explicit per-span total cost override in dollars. Must be finite. |
 
 `input_tokens`, `output_tokens`, and `total_tokens` are accepted by some OpenTelemetry ingestion adapters and normalized to `prompt_tokens`, `completion_tokens`, and `tokens`. SDKs emitting Braintrust-native metrics MUST use the canonical Braintrust names directly.
+
+Embedding spans have no generated-token component. They emit
+`prompt_tokens` and `tokens` only when reported and MUST omit
+`completion_tokens` rather than fabricate zero. See
+[Embeddings](embeddings.md#metrics).
 
 ## Data required by insight
 

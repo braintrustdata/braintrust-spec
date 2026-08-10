@@ -817,6 +817,8 @@ When a multi-turn conversation includes prior reasoning output, the full context
 
 When an instrumented request or response contains inline binary media (images, PDFs, audio, video, etc.), SDKs MUST replace the raw media with Braintrust attachment references inside the log row's `input` or `output` payload. Do not add a separate attachment list. The lower-level scan, upload, retry, and fallback behavior is specified in [Attachments](features/attachments.md).
 
+Embedding APIs follow [Embedding APIs](features/embeddings.md).
+
 Attachment conversion is both a storage optimization and a display requirement. When conversion succeeds, raw media bytes MUST NOT remain inline in `input` or `output`. If conversion or upload fails, instrumentation MUST preserve the original payload and MUST NOT throw an exception that prevents span export.
 
 ### What SDKs must emit
@@ -945,7 +947,7 @@ These API families SHOULD follow the same attachment rules even when they are no
 | Video generation                        | One `llm` span for the operation observed by the wrapper. Inputs and final video artifacts use attachments; operation IDs/status remain in metadata or output.              |
 | Audio transcription / speech generation | Speech-to-text attaches input audio and logs transcript output. Text-to-speech logs text input and attaches generated audio output.                                         |
 | OCR / document understanding            | Attach input documents/images and log extracted text/structured page data as JSON.                                                                                          |
-| Multimodal embeddings                   | For now, only track token metrics when the provider reports them. Detailed multimodal embedding payload conventions are still a separate TODO.                              |
+| Multimodal embeddings                   | Use the canonical embedding input and count-only output defined in [Embedding APIs](features/embeddings.md).                                                               |
 | Realtime / live APIs                    | Use a parent `task` span for the session with child spans for model turns, media exchanges, and tool calls. Detailed event lifecycle conventions are still a separate TODO. |
 | Prediction-style model runner APIs      | Log provider-native input/output JSON, converting any media fields with inline bytes/base64/data URLs into attachments.                                                     |
 
@@ -1003,9 +1005,9 @@ Instrumentation MUST only emit the metric keys listed in this guide. The followi
 | --------------------------------- | ------ | ---------------- | -------- | ------------------------------------------------ |
 | `start`                           | number | All spans        | MUST     | Unix timestamp when the span started             |
 | `end`                             | number | All spans        | MUST     | Unix timestamp when the span ended               |
-| `tokens`                          | number | All LLM spans    | MUST     | Total tokens (prompt + completion)               |
-| `prompt_tokens`                   | number | All LLM spans    | MUST     | Input / prompt tokens                            |
-| `completion_tokens`               | number | All LLM spans    | MUST     | Output / completion tokens                       |
+| `tokens`                          | number | LLM spans        | MUST\*   | Total tokens when the total is known             |
+| `prompt_tokens`                   | number | LLM spans        | MUST\*   | Input / prompt tokens                            |
+| `completion_tokens`               | number | Generative LLM spans | MUST\* | Output / completion tokens                    |
 | `time_to_first_token`             | number | Streaming spans  | MUST     | Seconds from request start to first chunk        |
 | `completion_reasoning_tokens`     | number | Reasoning models | MUST\*   | Tokens used for model reasoning                  |
 | `prompt_cached_tokens`            | number | Cached responses | SHOULD   | Tokens read from provider cache                  |
@@ -1017,9 +1019,16 @@ Instrumentation MUST only emit the metric keys listed in this guide. The followi
 | `completion_image_tokens`         | number | Image models     | SHOULD   | Output image tokens reported by provider         |
 | `estimated_cost`                  | number | LLM spans        | MAY      | Explicit per-span total estimated cost in dollars |
 
-\* MUST be captured when the provider reports it; not all providers/models support reasoning tokens.
+\* Usage metrics MUST be captured when the provider reports them or the SDK can
+compute them accurately. Missing values MUST be omitted rather than fabricated.
+This also applies to reasoning-token metrics, which are not reported by every
+provider/model.
 
 SDKs MUST NOT add metrics beyond the keys listed in this guide. Add new metric keys to this specification before emitting them.
+
+Embedding spans are the exception to the generative token requirements above:
+they emit `prompt_tokens` and `tokens` only when reported and MUST omit
+`completion_tokens`. See [Embedding APIs](features/embeddings.md#metrics).
 
 ---
 
@@ -1096,6 +1105,5 @@ For backward compatibility, the ingestion pipeline also accepts the non-`_json` 
 
 The following areas still need to be specified:
 
-- **Embedding APIs** — instrumentation for embedding endpoints (e.g. OpenAI `embeddings.create`, Google `embedContent`), including input/output structure, token metrics
 - **Realtime APIs** — detailed instrumentation for realtime/WebSocket-based APIs (e.g. OpenAI Realtime API), including event lifecycle, session finalization, and interruption/cancellation behavior
 - **Reranking APIs** — instrumentation for reranking endpoints (e.g. Cohere `rerank`, Jina Reranker), including input/output structure and relevance score metrics
