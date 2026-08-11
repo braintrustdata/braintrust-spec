@@ -102,31 +102,20 @@ Local, in-process model runners that return a tensor **MAY** instead emit a
 compact tensor-shape summary:
 
 ```ts
-type LocalTensorEmbeddingOutput =
-  | { embedding_length: number }
-  | { embedding_count: number; embedding_length: number }
-  | {
-      embedding_batch_count: number;
-      embedding_count: number;
-      embedding_length: number;
-    };
+type LocalTensorEmbeddingOutput = {
+  shape: number[];
+};
 ```
 
-For a one-dimensional tensor, `embedding_length` is its only dimension. For a
-two-dimensional tensor, `embedding_count` is the first dimension and
-`embedding_length` is the last dimension. For a tensor with three or more
-dimensions, `embedding_batch_count` is the first dimension,
-`embedding_count` is the second dimension, and `embedding_length` is the last
-dimension. Instrumentation **MUST** read these values from shape metadata
-exposed by the model runtime and **MUST NOT** materialize or iterate the vector
-to compute them.
+`shape` **MUST** contain the size of each tensor dimension in axis order.
+Instrumentation **MUST** read it from shape metadata exposed by the model
+runtime and **MUST NOT** materialize or iterate the vector to compute it.
 
 Instrumentation **MUST NOT** capture:
 
 - raw vector values
 - prefixes or samples of vector values
 - vector hashes
-- a raw dimensions array
 - vector norms or other derived vector statistics
 
 An explicitly requested `output_dimensions` value belongs in the canonical
@@ -176,7 +165,7 @@ SDK implementations **SHOULD** cover these scenarios in their own tests:
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Single text input                                 | One input object and `count: 1` are emitted without vector values.                                                         |
 | Text batch                                        | Input objects preserve request order and `count` matches the returned batch size.                                          |
-| Local tensor output                               | The compact output reports the runtime tensor shape without vector values or a raw dimensions array.                       |
+| Local tensor output                               | The compact output reports an ordered array of tensor dimension sizes without vector values.                              |
 | Aggregated text and image parts                   | One input object represents the provider's aggregation boundary.                                                           |
 | Separate image, audio, video, and document inputs | Separate ordered input objects are emitted, inline inputs become attachments, and `count` matches the returned batch size. |
 | Explicit output dimensionality                    | The requested value is captured in input; local tensor runners may also report the returned shape in output.               |
