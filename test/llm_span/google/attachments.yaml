@@ -30,8 +30,10 @@ expected_brainstore_spans:
       tokens: !fn is_non_negative_number
       prompt_tokens: !fn is_non_negative_number
       completion_tokens: !fn is_non_negative_number
+      prompt_audio_tokens: !fn is_positive_number
     metadata:
       model: !starts_with gemini-3.1-flash-lite
+      provider: google
     span_attributes:
       name: generate_content
       type: llm

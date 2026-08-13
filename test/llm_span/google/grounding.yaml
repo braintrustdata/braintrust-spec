@@ -1,0 +1,38 @@
+name: grounding
+type: llm_span_test
+provider: google
+endpoint: /v1/models/gemini-2.5-flash:generateContent
+requests:
+  - contents:
+      - role: user
+        parts:
+          - text: What is the current population of Tokyo, Japan? Answer in one sentence.
+    tools:
+      - googleSearch: {}
+    generationConfig:
+      temperature: 0.0
+      thinkingConfig:
+        includeThoughts: true
+expected_brainstore_spans:
+  - # Google's total includes the normal prompt, tool-use prompt, candidates,
+    # and thoughts. The matcher catches omission of either additional category.
+    metrics: !fn is_google_usage_metadata_normalized
+    metadata:
+      model: !starts_with gemini-2.5-flash
+      provider: google
+      usage_by_modality:
+        tool_use_prompt_tokens_details: !fn is_positive_google_modality_details
+    span_attributes:
+      type: llm
+    context:
+      span_origin:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
+    output:
+      candidates:
+        - content:
+            role: model
+          groundingMetadata:
+            webSearchQueries: !fn is_non_empty_list
