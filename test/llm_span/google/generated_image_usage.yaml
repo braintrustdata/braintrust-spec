@@ -1,24 +1,24 @@
-name: generate_content
+name: generated_image_usage
 type: llm_span_test
 provider: google
-endpoint: /v1/models/gemini-3.1-flash-lite-preview:generateContent
+endpoint: /v1/models/gemini-2.5-flash-image:generateContent
 requests:
   - contents:
       - role: user
         parts:
-          - text: What is the capital of France?
+          - text: Generate a simple blue square icon.
     generationConfig:
-      temperature: 0.0
+      responseModalities: [TEXT, IMAGE]
 expected_brainstore_spans:
   - metrics:
       tokens: !fn is_non_negative_number
       prompt_tokens: !fn is_non_negative_number
       completion_tokens: !fn is_non_negative_number
+      completion_image_tokens: !fn is_positive_number
     metadata:
-      model: !starts_with gemini-3.1-flash-lite
+      model: !starts_with gemini-2.5-flash-image
       provider: google
     span_attributes:
-      name: generate_content
       type: llm
     context:
       span_origin:
@@ -26,15 +26,7 @@ expected_brainstore_spans:
         version: !fn is_non_empty_string
         instrumentation:
           name: !fn is_non_empty_string
-    input:
-      model: !starts_with gemini-3.1-flash-lite
-      contents:
-        - role: user
-          parts:
-            - text: What is the capital of France?
     output:
       candidates:
         - content:
-            parts:
-              - text: !fn is_non_empty_string
             role: model

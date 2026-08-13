@@ -171,7 +171,7 @@ After parsing, represent each spec as a value object:
 LlmSpanSpec {
   name:                    string          # e.g. "completions"
   type:                    string          # always "llm_span_test" for now
-  provider:                string          # "openai" | "anthropic"
+  provider:                string          # "openai" | "anthropic" | "google" | ...
   endpoint:                string          # "/v1/chat/completions" | "/v1/messages" | ...
   requests:                list<map>       # one map per API call (raw YAML, passed to SDK)
   expected_brainstore_spans: list<map>     # may contain FnMatcher / StartsWithMatcher / OrMatcher
@@ -204,6 +204,8 @@ After the span ends, flush the SDK so spans are exported before you attempt to f
 provider=openai,  endpoint=/v1/chat/completions  → executeChatCompletions(requests, client)
 provider=openai,  endpoint=/v1/responses         → executeResponses(requests, client)
 provider=anthropic, endpoint=/v1/messages        → executeAnthropicMessages(requests, client)
+provider=google, endpoint=*`:generateContent`    → executeGenerateContent(requests, client)
+provider=google, endpoint=/v1/interactions       → executeInteractions(requests, client)
 ```
 
 Raise `NotImplementedError` for combinations you haven't implemented yet.
@@ -317,6 +319,7 @@ raise TimeoutError
 | `BRAINTRUST_PROJECT_ID` or `BRAINTRUST_DEFAULT_PROJECT_ID` | Project UUID (optional if name is given) |
 | `OPENAI_API_KEY` | Required for OpenAI specs |
 | `ANTHROPIC_API_KEY` | Required for Anthropic specs |
+| `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Required for Google/Gemini specs |
 
 ---
 
@@ -372,9 +375,18 @@ Implement these by name:
 
 | Name | Assertion |
 |---|---|
-| `is_non_negative_number` | `isinstance(v, (int, float)) and v >= 0` |
-| `is_non_empty_string` | `isinstance(v, str) and len(v) > 0` |
-| `is_reasoning_message` | `v` is a list (possibly empty) of `{type: "summary_text", text: <non-empty str>}` dicts |
+| `is_non_negative_number` | A numeric, non-boolean value greater than or equal to zero. |
+| `is_positive_number` | A numeric, non-boolean value greater than zero. |
+| `is_non_empty_string` | A string with at least one character. |
+| `is_non_empty_list` | A list with at least one item. |
+| `is_non_empty_mapping` | A map/object with at least one entry. |
+| `is_positive_google_modality_details` | A non-empty list of Google modality-detail objects whose `tokenCount`, `token_count`, or `tokens` values sum to a positive number. |
+| `is_reasoning_message` | `v` is a list (possibly empty) of `{type: "summary_text", text: <non-empty str>}` dicts. |
+| `undefined_or_null` | The value is absent or null. When this matcher is used for a map key, a missing key MUST be passed to the matcher as null rather than failing the usual missing-key check. |
+| `is_google_usage_metadata_normalized` | `v` is a metrics map with non-negative `tokens`, `prompt_tokens`, and `completion_tokens`; positive `completion_reasoning_tokens`; `tokens == prompt_tokens + completion_tokens`; `completion_reasoning_tokens <= completion_tokens`; and no non-null `tool_use_tokens` metric. |
+| `is_google_streaming_usage_metadata_normalized` | The Google normalized-usage predicate above, plus a non-negative `time_to_first_token`. |
+
+The Google predicates encode the canonical mapping in the instrumentation skill's [Google Gemini usage metadata spec](../skills/instrumentation-spec/references/features/google-usage-metadata.md). Implement them as named predicates in every runner; do not fall back to the loose unknown-expression behavior.
 
 For any other `!fn` expression (e.g. `lambda value: "Paris" in value`):
 - **Python/Ruby/dynamic**: `eval()` / `eval` the expression directly — it is a valid expression in the language.
@@ -441,6 +453,15 @@ cassettes/
     messages.<ext>
     streaming.<ext>
     attachments.<ext>
+  google/
+    thinking.<ext>
+    grounding.<ext>
+    streaming.<ext>
+    interactions.<ext>
+    interactions_streaming.<ext>
+    attachments.<ext>
+    generated_audio_usage.<ext>
+    generated_image_usage.<ext>
 ```
 
 Name cassettes after `<provider>/<spec_name>` so they are stable across refactors of the test function name.
@@ -452,7 +473,7 @@ The exact command depends on your language's VCR library.  Refer to the referenc
 - **Python** ([vcrpy](https://github.com/kevin1024/vcrpy) via pytest-vcr): `pytest btx/ --vcr-record=all -v`
 - **Java** ([WireMock](https://wiremock.org/)): `./gradlew btx:test -Pbtx.vcr.mode=record`
 
-Commit the cassettes.  Re-record when the spec or model behaviour changes.
+Commit the cassettes. Re-record when the spec or model behaviour changes. Sanitize binary media in both request and response bodies so generated-audio/image cassettes do not retain large base64 payloads.
 
 ---
 
@@ -460,7 +481,7 @@ Commit the cassettes.  Re-record when the spec or model behaviour changes.
 
 ### Test structure
 
-The test is a parametrized test — one test case per spec file.  The test ID should be `<provider>/<name>` (e.g. `openai/completions`, `anthropic/streaming`) for easy filtering.
+The test is a parametrized test — one test case per spec file. The test ID should be `<provider>/<name>` (for example, `google/thinking`) for easy filtering.
 
 ```
 for each spec in load_specs():

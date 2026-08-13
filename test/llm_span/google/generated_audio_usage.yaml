@@ -1,24 +1,28 @@
-name: generate_content
+name: generated_audio_usage
 type: llm_span_test
 provider: google
-endpoint: /v1/models/gemini-3.1-flash-lite-preview:generateContent
+endpoint: /v1/models/gemini-2.5-flash-preview-tts:generateContent
 requests:
   - contents:
       - role: user
         parts:
-          - text: What is the capital of France?
+          - text: "Read this sentence aloud: Hello and welcome to Braintrust."
     generationConfig:
-      temperature: 0.0
+      responseModalities: [AUDIO]
+      speechConfig:
+        voiceConfig:
+          prebuiltVoiceConfig:
+            voiceName: Kore
 expected_brainstore_spans:
   - metrics:
       tokens: !fn is_non_negative_number
       prompt_tokens: !fn is_non_negative_number
       completion_tokens: !fn is_non_negative_number
+      completion_audio_tokens: !fn is_positive_number
     metadata:
-      model: !starts_with gemini-3.1-flash-lite
+      model: !starts_with gemini-2.5-flash-preview-tts
       provider: google
     span_attributes:
-      name: generate_content
       type: llm
     context:
       span_origin:
@@ -26,15 +30,7 @@ expected_brainstore_spans:
         version: !fn is_non_empty_string
         instrumentation:
           name: !fn is_non_empty_string
-    input:
-      model: !starts_with gemini-3.1-flash-lite
-      contents:
-        - role: user
-          parts:
-            - text: What is the capital of France?
     output:
       candidates:
         - content:
-            parts:
-              - text: !fn is_non_empty_string
             role: model

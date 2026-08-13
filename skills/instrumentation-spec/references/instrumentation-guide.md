@@ -79,8 +79,8 @@ The `metrics` field is an object of string keys to numeric values. Instrumentati
 | `start`               | Unix timestamp when the span started                                                 |
 | `end`                 | Unix timestamp when the span ended                                                   |
 | `prompt_tokens`       | Input/prompt token count (LLM spans)                                                 |
-| `completion_tokens`   | Output/completion token count (LLM spans)                                            |
-| `tokens`              | Total token count (LLM spans)                                                        |
+| `completion_tokens`   | Output/completion token count, including reported reasoning usage (LLM spans)        |
+| `tokens`              | Provider-reported total token count, or an accurate computed total (LLM spans)       |
 | `time_to_first_token` | Seconds from request start to the first generated token or chunk                     |
 
 ### Context
@@ -656,15 +656,15 @@ Tool-related metadata fields are specified in [Available tool definitions](#avai
 
 ### Metrics
 
-Every completion API span MUST capture:
+Every completion API span MUST capture the following metrics when the provider reports them or the SDK can compute them accurately:
 
 | Metric              | Type   | Description              |
 | ------------------- | ------ | ------------------------ |
 | `tokens`            | number | Total tokens used        |
 | `prompt_tokens`     | number | Input/prompt tokens      |
-| `completion_tokens` | number | Output/completion tokens |
+| `completion_tokens` | number | Output/completion tokens, including reasoning tokens |
 
-All metric values MUST be non-negative numbers.
+All metric values MUST be non-negative numbers. Provider-specific categories that are part of input or output usage MUST be included in these canonical totals; detail metrics remain subsets and are not added again. For Google GenerateContent, Interactions, and ADK, follow [Google Gemini usage metadata](features/google-usage-metadata.md).
 
 ---
 
@@ -767,13 +767,13 @@ This metric MUST be captured for all streaming calls. It is measured by the SDK,
 
 ### Token counts from stream metadata
 
-Token metrics (`tokens`, `prompt_tokens`, `completion_tokens`) MUST be captured from the stream's usage metadata (e.g. OpenAI's `stream_options.include_usage`). If the provider does not include usage in the stream, the SDK SHOULD still attempt to capture token counts if they become available (e.g. from a final stream event).
+Token metrics (`tokens`, `prompt_tokens`, `completion_tokens`) MUST be captured from the stream's usage metadata (e.g. OpenAI's `stream_options.include_usage`). If the provider does not include usage in the stream, the SDK SHOULD still attempt to capture token counts if they become available (e.g. from a final stream event). Google streaming integrations MUST apply the same inclusive thoughts/tool-use mapping as non-streaming calls to the final usage-bearing event; see [Google Gemini usage metadata](features/google-usage-metadata.md).
 
 ---
 
 ## Reasoning Models
 
-Models that perform chain-of-thought reasoning (e.g. OpenAI o-series) require additional capture.
+Models that perform chain-of-thought reasoning (e.g. OpenAI o-series and Gemini thinking models) require additional capture.
 
 ### Additional metrics
 
@@ -781,7 +781,7 @@ Models that perform chain-of-thought reasoning (e.g. OpenAI o-series) require ad
 | ----------------------------- | ------ | ---------------------------------- |
 | `completion_reasoning_tokens` | number | Tokens used for internal reasoning |
 
-This metric MUST be captured when the provider reports it.
+This metric MUST be captured when the provider reports it. It is a subset of `completion_tokens`, not an additional token class. For Gemini, `completion_tokens` is candidates plus thoughts; see [Google Gemini usage metadata](features/google-usage-metadata.md).
 
 ### Output structure
 
@@ -1014,9 +1014,9 @@ Instrumentation MUST only emit the metric keys listed in this guide. The followi
 | `prompt_cache_creation_tokens`    | number | Cached responses | SHOULD   | Tokens written to provider cache                 |
 | `prompt_cache_creation_5m_tokens` | number | Cached responses | SHOULD   | Cache-write tokens for 5-minute TTL entries      |
 | `prompt_cache_creation_1h_tokens` | number | Cached responses | SHOULD   | Cache-write tokens for 1-hour TTL entries        |
-| `prompt_audio_tokens`             | number | Audio models     | SHOULD   | Input audio tokens reported by provider          |
-| `completion_audio_tokens`         | number | Audio models     | SHOULD   | Output audio tokens reported by provider         |
-| `completion_image_tokens`         | number | Image models     | SHOULD   | Output image tokens reported by provider         |
+| `prompt_audio_tokens`             | number | Audio models     | SHOULD   | Input audio tokens reported by provider; subset of prompt usage |
+| `completion_audio_tokens`         | number | Audio models     | SHOULD   | Output audio tokens reported by provider; subset of completion usage |
+| `completion_image_tokens`         | number | Image models     | SHOULD   | Output image tokens reported by provider; subset of completion usage |
 | `estimated_cost`                  | number | LLM spans        | MAY      | Explicit per-span total estimated cost in dollars |
 
 \* Usage metrics MUST be captured when the provider reports them or the SDK can

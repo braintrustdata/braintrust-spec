@@ -1,0 +1,27 @@
+name: interactions_streaming
+type: llm_span_test
+provider: google
+endpoint: /v1/interactions
+requests:
+  - model: gemini-2.5-flash
+    input: Explain in one sentence why leaves are green.
+    stream: true
+expected_brainstore_spans:
+  - metrics: !fn is_google_streaming_usage_metadata_normalized
+    metadata:
+      model: !starts_with gemini-2.5-flash
+      provider: google
+    span_attributes:
+      name: interactions.create
+      type: llm
+    context:
+      span_origin:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
+    output: !or
+      - status: completed
+        text: !fn is_non_empty_string
+      - status: completed
+        output_text: !fn is_non_empty_string

@@ -1,0 +1,38 @@
+name: thinking
+# Run the same provider request through every registered direct Google and ADK
+# integration that can express GenerateContent.
+type: llm_span_test
+provider: google
+endpoint: /v1/models/gemini-2.5-flash:generateContent
+requests:
+  - contents:
+      - role: user
+        parts:
+          - text: Explain why the sum of two odd integers is even. Be concise.
+    generationConfig:
+      temperature: 0.0
+      thinkingConfig:
+        includeThoughts: true
+expected_brainstore_spans:
+  - # Requires candidates + thoughts for completion, the provider total, and no
+    # nonstandard tool_use_tokens metric.
+    metrics: !fn is_google_usage_metadata_normalized
+    metadata:
+      model: !starts_with gemini-2.5-flash
+      provider: google
+    span_attributes:
+      type: llm
+    context:
+      span_origin:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
+    output:
+      candidates:
+        - content:
+            parts:
+              - thought: true
+                text: !fn is_non_empty_string
+              - text: !fn is_non_empty_string
+            role: model

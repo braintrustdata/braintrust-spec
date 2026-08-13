@@ -29,8 +29,10 @@ All token counts MUST be non-negative integers. Omit a metric when the provider 
 | `prompt_cache_creation_tokens` | integer | SHOULD when reported | Aggregate prompt tokens written to a provider cache. These are a subset of `prompt_tokens`, not extra tokens. |
 | `prompt_cache_creation_5m_tokens` | integer | SHOULD when reported | Prompt cache-write tokens for a 5-minute TTL bucket. This is a breakdown or alternative representation of cache creation tokens, not an additional token class. |
 | `prompt_cache_creation_1h_tokens` | integer | SHOULD when reported | Prompt cache-write tokens for a 1-hour TTL bucket. This is a breakdown or alternative representation of cache creation tokens, not an additional token class. |
-| `completion_reasoning_tokens` | integer | MUST when reported | Tokens used for model reasoning. These are usage diagnostics and are not separately costed by the current estimated-cost formula. |
+| `completion_reasoning_tokens` | integer | MUST when reported | Tokens used for model reasoning. These are a subset of `completion_tokens`, usage diagnostics, and not separately costed by the current estimated-cost formula. |
 | `prompt_audio_tokens` | integer | SHOULD when reported | Input audio tokens. These are a subset of `prompt_tokens`, not additional tokens. |
+| `completion_audio_tokens` | integer | SHOULD when reported | Output audio tokens. These are a subset of `completion_tokens`, not additional tokens. |
+| `completion_image_tokens` | integer | SHOULD when reported | Output image tokens. These are a subset of `completion_tokens`, not additional tokens. |
 | `time_to_first_token` | number | MUST for streaming spans | Seconds from request start to first streamed token or chunk. |
 | `estimated_cost` | number | MAY | Explicit per-span total cost override in dollars. Must be finite. |
 
@@ -40,6 +42,8 @@ Embedding spans have no generated-token component. They emit
 `prompt_tokens` and `tokens` only when reported and MUST omit
 `completion_tokens` rather than fabricate zero. See
 [Embeddings](embeddings.md#metrics).
+
+Provider usage fields sometimes divide prompt or completion usage into additional categories. Those categories MUST be included in the canonical totals when the provider defines them as input or output usage. In particular, Google Gemini thoughts are included in `completion_tokens`, Google tool-use prompts are included in `prompt_tokens`, and Google's reported total is preserved as `tokens`; see [Google Gemini usage metadata](google-usage-metadata.md). SDKs MUST NOT invent custom metrics such as `tool_use_tokens` for provider-specific categories.
 
 ## Data required by insight
 
@@ -54,7 +58,8 @@ Braintrust can only compute or display an insight when the required data is pres
 | Cache-read usage and savings | `metrics.prompt_cached_tokens`, `metrics.prompt_tokens`, `metadata.model`, `metadata.provider` | If cache-read tokens are missing, cost falls back to treating all prompt tokens as uncached for cache-read purposes. |
 | Aggregate cache-write cost | `metrics.prompt_cache_creation_tokens`, `metrics.prompt_tokens`, `metadata.model`, `metadata.provider` | If aggregate cache-write tokens are missing, cache-write cost can only be computed from TTL split fields if present. |
 | TTL-specific cache-write cost | `metrics.prompt_cache_creation_5m_tokens`, `metrics.prompt_cache_creation_1h_tokens`, `metadata.model`, `metadata.provider`, pricing with both split cache-write rates | If split rates or a complete split are unavailable, cost falls back to aggregate cache-write pricing. |
-| Reasoning usage | `metrics.completion_reasoning_tokens` | Missing means the provider did not report reasoning tokens or the SDK did not capture them. |
+| Reasoning usage | `metrics.completion_reasoning_tokens` | This is a subset of `completion_tokens`. Missing means the provider did not report reasoning tokens or the SDK did not capture them. |
+| Audio/image usage | `metrics.prompt_audio_tokens`, `metrics.completion_audio_tokens`, `metrics.completion_image_tokens` | Each detail is a subset of its prompt or completion total. Unsupported modality arrays remain provider metadata rather than custom metrics. |
 | Streaming latency | `metrics.time_to_first_token` | Required only for streaming spans. |
 | Estimated dollar cost | `metrics.estimated_cost`, or token metrics plus `metadata.model`, `metadata.provider`, and matching model/provider pricing | `estimated_cost` is the most authoritative per-span value. Token-derived cost is unavailable when pricing or token inputs are unavailable. |
 | Exclude scorer costs | `span_attributes.purpose = "scorer"` on scorer LLM spans | Braintrust estimated-cost functions exclude scorer spans. Omit this only when scorer cost should be counted with normal task cost. |
