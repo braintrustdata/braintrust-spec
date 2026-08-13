@@ -39,9 +39,9 @@ Note: `input` and `output` are **free-form JSON** — the backend does not enfor
 
 Instrumentation MUST NOT capture any data or fields unless this guide explicitly requires or allows them. This applies even when the backend can store arbitrary JSON or a provider/framework SDK exposes additional data.
 
-New captured fields MUST be added to this specification before SDKs emit them. This background behind this policy is to keep telemetry reliable and predictable, avoids unnecessary data capture (which are critical both in terms of data-volume and PII), and facilitates building an opinionated product around our instrumentation.
+Every instrumentation integration MUST control additional metadata fields with an explicit allowlist. Integrations MAY extend their metadata allowlists with domain-specific fields that are useful to users, as permitted by the relevant section of this guide. They MUST NOT copy or spread arbitrary request configuration or provider metadata objects into span metadata. Metadata fields that are neither defined by this specification nor explicitly included in an integration's allowlist MUST be omitted.
 
-It is encouraged to expand this specification for any data that may already be captured (preceding this policy), however extensions of this specification should go through critical review.
+This policy keeps telemetry reliable and predictable, avoids unnecessary data capture (which is critical for both data volume and PII), and facilitates building an opinionated product around our instrumentation. Additions to shared fields and integration-specific metadata allowlists should go through critical review.
 
 ### Span types
 
@@ -650,9 +650,11 @@ Every LLM span MUST include:
 
 The `model` field SHOULD use the model string from the API response (which may include a version suffix) rather than the string the user passed in the request. The `provider` field is required even when model names are globally recognizable, because gateways and resellers can price the same model differently.
 
-Instrumentation MAY include only the following LLM request configuration fields in metadata when they are present and JSON-serializable: `temperature`, `top_p`, `max_tokens`, `frequency_penalty`, `presence_penalty`, `stop`, and `response_format`.
+Instrumentation MAY include the following common LLM request configuration fields in metadata when they are present and JSON-serializable: `temperature`, `top_p`, `max_tokens`, `frequency_penalty`, `presence_penalty`, `stop`, and `response_format`.
 
-Tool-related metadata fields are specified in [Available tool definitions](#available-tool-definitions). Prompt provenance metadata fields are specified in [Prompt metadata](#prompt-metadata). Any additional metadata field requires a specification update before SDKs emit it.
+An integration MAY also include JSON-serializable, domain-specific metadata that is useful to users, but it MUST enumerate every captured field in an explicit integration-level allowlist. Instrumentation MUST select allowlisted fields individually and MUST NOT copy or spread arbitrary request configuration or provider metadata into span metadata.
+
+Tool-related metadata fields are specified in [Available tool definitions](#available-tool-definitions). Prompt provenance metadata fields are specified in [Prompt metadata](#prompt-metadata). Other metadata fields MUST be defined by this guide or an integration-specific allowlist before SDKs emit them.
 
 ### Metrics
 
