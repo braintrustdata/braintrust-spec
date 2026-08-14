@@ -1,0 +1,42 @@
+name: reasoning_completions
+type: llm_span_test
+provider: openai
+endpoint: /v1/chat/completions
+requests:
+  - model: o4-mini
+    reasoning_effort: medium
+    messages:
+      - role: user
+        content: >
+          Look at this sequence: 2, 6, 12, 20, 30.
+          What is the pattern and what would be the formula for the nth term?
+expected_brainstore_spans:
+  - metrics:
+      tokens: !fn is_non_negative_number
+      prompt_tokens: !fn is_non_negative_number
+      completion_tokens: !fn is_non_negative_number
+      completion_reasoning_tokens: !fn is_positive_number
+    metadata:
+      model: !starts_with o4-mini
+      provider: openai
+    span_attributes:
+      name: Chat Completion
+      type: llm
+    context:
+      span_origin:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
+    input:
+      - role: user
+        content: >
+          Look at this sequence: 2, 6, 12, 20, 30. What is the pattern and what
+          would be the formula for the nth term?
+    output:
+      - index: 0
+        message:
+          role: assistant
+          content: !fn is_non_empty_string
+          # NOTE: some vendors will return the reasoning text, others will not
+          # reasoning_content: !fn is_non_empty_string
