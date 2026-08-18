@@ -174,9 +174,9 @@ Braintrust SDK spans use the following attribute prefixes (see also the [AI span
 
 ---
 
-## Completion APIs vs Agentic APIs
+## Completion, Batch, and Agentic APIs
 
-This is the most important distinction in Braintrust instrumentation. The two API categories produce fundamentally different span structures.
+This is the most important distinction in Braintrust instrumentation. The API categories produce fundamentally different span structures.
 
 ### Completion APIs
 
@@ -191,6 +191,17 @@ llm  (Chat Completion)          ← one span, one API call
 ```
 
 If the model returns tool calls, the completion API span captures them in its output, but does NOT execute them or create tool spans.
+
+### Batch APIs
+
+Batch APIs submit many model requests as a long-running provider job and make
+the results available later. They use one parent `task` span with one child
+`llm` span per batch request (per LLM query). Batch tracing is explicit and resumable; it should not be traced via auto-instrumentation, and Braintrust SDKs must not make provider API calls on the user's behalf.
+
+See [Batch APIs](features/batch-apis.md) for the start/collect lifecycle,
+context propagation, collect-only fallback, and resource requirements. A
+synchronous API that accepts multiple inputs in one request is not a batch API
+under this definition.
 
 ### Agentic APIs
 
@@ -212,15 +223,15 @@ task  (agent run)               ← parent span for the entire agentic operation
 
 The key differences:
 
-| Aspect                      | Completion API           | Agentic API                       |
-| --------------------------- | ------------------------ | --------------------------------- |
-| Spans per user call         | 1                        | 1 parent + N children             |
-| Parent span type            | —                        | `task`                            |
-| LLM span type               | `llm`                    | `llm` (child)                     |
-| Tool execution spans        | None (not SDK's job)     | `tool` (child, one per tool call) |
-| Who executes tools?         | User code                | SDK / framework                   |
-| Tool calls in LLM output?   | Yes (for user to act on) | Yes (for observability)           |
-| Tool results in next input? | User's responsibility    | SDK handles automatically         |
+| Aspect                      | Completion API           | Batch API                         | Agentic API                       |
+| --------------------------- | ------------------------ | --------------------------------- | --------------------------------- |
+| Spans per operation         | 1                        | 1 parent + N children             | 1 parent + N children             |
+| Parent span type            | —                        | `task`                            | `task`                            |
+| LLM span type               | `llm`                    | `llm` (one per batch request)     | `llm` (one per model call)        |
+| Tool execution spans        | None (not SDK's job)     | None                              | `tool` (child, one per tool call) |
+| Who calls the provider?     | User code                | User code                         | SDK / framework                   |
+| Instrumentation activation  | Automatic or explicit    | Explicit only                     | Automatic or explicit             |
+| Completion timing           | Same request             | Later collection step             | Same agent operation              |
 
 ---
 
