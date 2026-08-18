@@ -1,0 +1,57 @@
+name: web_search
+type: llm_span_test
+provider: openai
+endpoint: /v1/responses
+requests:
+  - model: gpt-4o
+    tools:
+      - type: web_search_preview
+        search_context_size: low
+    # Force a single search so the tool-span shape is deterministic.
+    tool_choice:
+      type: web_search_preview
+    input:
+      - role: user
+        content: Search the web for a recent AI news headline and answer in one sentence.
+expected_brainstore_spans:
+  - metrics:
+      tokens: !fn is_non_negative_number
+      prompt_tokens: !fn is_non_negative_number
+      completion_tokens: !fn is_non_negative_number
+    metadata:
+      model: !starts_with gpt-4o
+      provider: openai
+    span_attributes:
+      type: llm
+    context:
+      span_origin:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
+    input:
+      - role: user
+        content: Search the web for a recent AI news headline and answer in one sentence.
+    output:
+      # The Responses `output` array carries the built-in web search call followed
+      # by the assistant message. (Assumes the forced single search above.)
+      - type: web_search_call
+        status: completed
+      - type: message
+        role: assistant
+        content:
+          - type: output_text
+            text: !fn is_non_empty_string
+    # ---- web_search_call TOOL span, a child of the LLM span above ------------
+    child_spans:
+      - span_attributes:
+          type: tool
+          name: web_search_call
+        metadata:
+          tool_type: web_search_call
+          tool_id: !fn is_non_empty_string
+          status: !fn is_non_empty_string
+        input:
+          # For web_search_call the span input is the search `action` object.
+          action:
+            type: !fn is_non_empty_string

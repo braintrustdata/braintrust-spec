@@ -1,0 +1,45 @@
+# The tool is intentionally minimal ({type, name} — no `max_uses`) so it is expressible by
+# every instrumented Anthropic client (e.g.Spring AI's typed tool model).
+name: web_search
+type: llm_span_test
+provider: anthropic
+endpoint: /v1/messages
+requests:
+  - model: claude-sonnet-4-5-20250929
+    max_tokens: 1024
+    messages:
+      - role: user
+        content: Search the web for a recent AI news headline and answer in one sentence.
+    tools:
+      - type: web_search_20250305
+        name: web_search
+expected_brainstore_spans:
+  - metrics:
+      tokens: !fn is_non_negative_number
+      prompt_tokens: !fn is_non_negative_number
+      completion_tokens: !fn is_non_negative_number
+      # The web-search cost signal the backend prices.
+      server_tool_use_web_search_requests: !fn is_positive_number
+    metadata:
+      model: !starts_with claude-sonnet-4-5
+      provider: anthropic
+    span_attributes:
+      type: llm
+    context:
+      span_origin:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
+    input:
+      - role: user
+        content: Search the web for a recent AI news headline and answer in one sentence.
+    # ---- web_search server-tool span, a child of the LLM span above ----------
+    child_spans:
+      - span_attributes:
+          type: tool
+          name: web_search
+        metadata:
+          tool_use_id: !fn is_non_empty_string
+          tool_call_type: server_tool_use
+          tool_result_type: web_search_tool_result

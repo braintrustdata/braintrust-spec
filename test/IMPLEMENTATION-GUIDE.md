@@ -174,7 +174,8 @@ LlmSpanSpec {
   provider:                string          # "openai" | "anthropic" | "google" | ...
   endpoint:                string          # "/v1/chat/completions" | "/v1/messages" | ...
   requests:                list<map>       # one map per API call (raw YAML, passed to SDK)
-  expected_brainstore_spans: list<map>     # may contain FnMatcher / StartsWithMatcher / OrMatcher
+  expected_brainstore_spans: list<map>     # may contain FnMatcher / StartsWithMatcher / OrMatcher;
+                                           # a span map may nest `child_spans: list<map>` (see Step 5)
   display_name:            string          # "<provider>/<name>" — used in test IDs and error messages
 }
 ```
@@ -329,9 +330,41 @@ Compare the list of fetched (or in-memory) spans against `spec.expected_brainsto
 
 ### Filtering and ordering
 
-Before validating, filter `actual_spans` to LLM spans only (`span_attributes.type == "llm"`).  Sort by `span_attributes.exec_counter` ascending for deterministic ordering across multi-span specs.
+Keep **all** fetched spans except the root wrapper (the test-case span, identified by a null or
+empty `span_parents`).  Do **not** filter to `type == "llm"` — built-in tool calls (web search,
+file search, ...) are emitted as child `type: tool` spans and must remain so `child_spans` can
+assert them (see below).  Also drop backend-injected scorer spans (`span_attributes.purpose ==
+"scorer"`).  Sort by `span_attributes.exec_counter` ascending for deterministic ordering across
+multi-span specs (SDKs that don't emit `exec_counter` may preserve fetch order — OTel export
+order in memory, or `created ASC` from the backend).
 
-Validate `actual_spans[i]` against `expected_brainstore_spans[i]` pairwise.  If `len(actual) < len(expected)`, fail immediately.  Extra actual spans (beyond what the spec expects) are allowed and ignored.
+Reshape the remaining flat list into a forest using `span_parents` → `span_id`: attach each
+span's children under a `child_spans` list, and validate only the **top-level** spans (direct
+children of the removed root) against `expected_brainstore_spans[i]` pairwise.  If `len(actual)
+< len(expected)`, fail immediately.  Extra actual spans (beyond what the spec expects, at any
+level) are allowed and ignored.
+
+### Nested child spans
+
+A span assertion may include a `child_spans:` key — a list of span assertions validated
+recursively against that span's actual children (same pairwise, order-preserving rules as the
+top level).  This is how a spec expresses, e.g., "this LLM span has a `web_search_call` tool
+child":
+
+```yaml
+expected_brainstore_spans:
+  - span_attributes: { type: llm }        # top-level span
+    # ... metrics / metadata / input / output ...
+    child_spans:
+      - span_attributes: { type: tool, name: web_search_call }
+        metadata: { tool_type: web_search_call, status: !fn is_non_empty_string }
+        # leaf: `child_spans` omitted (asserts nothing about its children)
+```
+
+`child_spans` is optional and additive — omitting it (a **leaf**) asserts nothing about a span's
+children; an empty list or null is treated the same way.  Existing flat specs need no changes.
+When sizing any "wait for N spans" gate before fetching, count `expected_brainstore_spans`
+**recursively** (including nested `child_spans`), or child spans may not have flushed yet.
 
 ### Recursive validation
 
