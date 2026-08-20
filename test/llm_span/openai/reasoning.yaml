@@ -78,7 +78,6 @@ expected_brainstore_spans:
         summary: !fn is_reasoning_message
       - type: message
         role: assistant
-        status: completed
         content:
           - type: output_text
       - role: user
