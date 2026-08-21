@@ -1,0 +1,50 @@
+name: streaming_multiple_choices
+type: llm_span_test
+provider: openai
+endpoint: /v1/chat/completions
+requests:
+  - model: gpt-4o-mini
+    max_tokens: 100
+    temperature: 0.0
+    messages:
+      - role: system
+        content: you are a concise assistant
+      - role: user
+        content: Say hello in one word.
+    stream: true
+    n: 2
+    stream_options:
+      include_usage: true
+expected_brainstore_spans:
+  - metrics:
+      time_to_first_token: !fn is_non_negative_number
+      tokens: !fn is_non_negative_number
+      prompt_tokens: !fn is_non_negative_number
+      completion_tokens: !fn is_non_negative_number
+      prompt_cached_tokens: !fn is_non_negative_number
+    metadata:
+      model: !starts_with "gpt-4o-mini"
+      provider: openai
+    span_attributes:
+      name: Chat Completion
+      type: llm
+    context:
+      span_origin:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
+    input:
+      - role: system
+        content: you are a concise assistant
+      - role: user
+        content: Say hello in one word.
+    output:
+      - index: 0
+        message:
+          role: assistant
+          content: !fn is_non_empty_string
+      - index: 1
+        message:
+          role: assistant
+          content: !fn is_non_empty_string
