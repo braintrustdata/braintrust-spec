@@ -1,0 +1,73 @@
+name: reasoning
+type: llm_span_test
+provider: bedrock
+endpoint: /model/{modelId}/converse
+# Extended thinking on Bedrock is requested through
+# additionalModelRequestFields.reasoning_config; inferenceConfig.maxTokens must
+# exceed budget_tokens. The response carries a reasoningContent block alongside
+# the assistant's text block.
+requests:
+  - modelId: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    messages:
+      - role: user
+        content:
+          - text: >-
+              A farmer has 17 sheep and all but 9 run away. How many sheep are
+              left? Reason it through, then give the number.
+    inferenceConfig:
+      maxTokens: 2048
+    additionalModelRequestFields:
+      reasoning_config:
+        type: enabled
+        budget_tokens: 1024
+expected_brainstore_spans:
+  - metrics:
+      tokens: !fn is_non_negative_number
+      prompt_tokens: !fn is_non_negative_number
+      completion_tokens: !fn is_non_negative_number
+    metadata:
+      model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+      provider: bedrock
+    span_attributes:
+      name: bedrock.converse
+      type: llm
+    context:
+      span_origin:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
+    input:
+      - role: user
+        content:
+          - type: text
+            text: >-
+              A farmer has 17 sheep and all but 9 run away. How many sheep are
+              left? Reason it through, then give the number.
+    output:
+      - role: assistant
+        content:
+          # Bedrock reports extended thinking as a reasoningContent block whose
+          # reasoningText holds the thought text plus an opaque signature. Both
+          # MUST survive into the span output without being flattened into text
+          # or dropped — a reasoning block reduced to plain text, or omitted
+          # entirely, fails here.
+          #
+          # `type` is asserted as "present and non-empty" rather than pinned to a
+          # literal, on purpose. Every other Bedrock content block carries an
+          # explicit type because the UI schema requires one, and a reasoning
+          # block missing it is a real defect this catches. But which name a
+          # *normalized* reasoning block should use is not yet settled
+          # cross-SDK: the Java SDK emits "thinking" (Anthropic's own name,
+          # consistent with how this normalizer maps toolUse -> tool_use), while
+          # the only reasoning example in the instrumentation guide shows
+          # "reasoning" — in an OpenAI Responses passthrough, where the wire
+          # format is echoed verbatim rather than normalized. Pin this to a
+          # literal once the intended normalized vocabulary is agreed.
+          - type: !fn is_non_empty_string
+            reasoningContent:
+              reasoningText:
+                text: !fn is_non_empty_string
+                signature: !fn is_non_empty_string
+          - type: text
+            text: !fn is_non_empty_string
