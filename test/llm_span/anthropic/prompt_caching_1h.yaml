@@ -270,6 +270,23 @@ expected_brainstore_spans:
         version: !fn is_non_empty_string
         instrumentation:
           name: !fn is_non_empty_string
+    # The system prompt must survive into the span input. Anthropic requires the
+    # array-of-content-blocks form of `system` to attach `cache_control`, so this
+    # assertion is what distinguishes a real prompt-caching request from a plain
+    # one: an SDK that only understands the plain-string form of `system` will
+    # drop the prompt here while still passing every other assertion in this file.
+    # The system entry is appended after the messages, matching `messages.yaml`.
+    input:
+      - role: user
+        content: What is the capital of France?
+      - role: system
+        content:
+          # `text` carries a per-run cache-buster, so only its presence is asserted.
+          - type: text
+            text: !fn is_non_empty_string
+            cache_control:
+              type: ephemeral
+              ttl: 1h
     output:
       content:
         - text: !fn is_non_empty_string

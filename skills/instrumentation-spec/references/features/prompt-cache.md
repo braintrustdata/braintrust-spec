@@ -1,10 +1,11 @@
 # Prompt caching
 
-> **Provider:** Anthropic
-> **Upstream reference:** [Anthropic prompt caching docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+> **Providers:** Anthropic, AWS Bedrock
+> **Upstream references:** [Anthropic prompt caching docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), [Bedrock prompt caching docs](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)
 > **Conformance tests:**
 > - [`test/llm_span/anthropic/prompt_caching_5m.yaml`](../../test/llm_span/anthropic/prompt_caching_5m.yaml) — default 5m TTL, no beta header
 > - [`test/llm_span/anthropic/prompt_caching_1h.yaml`](../../test/llm_span/anthropic/prompt_caching_1h.yaml) — extended 1h TTL, requires `extended-cache-ttl-2025-04-11` beta
+> - [`test/llm_span/bedrock/prompt_caching.yaml`](../../test/llm_span/bedrock/prompt_caching.yaml) — Bedrock `cachePoint`, covering a cache write and a cache read
 
 ## Overview
 
@@ -37,7 +38,7 @@ SDK implementations **MUST** treat the nested field as optional. A missing `cach
 
 ---
 
-## Braintrust metric mapping
+## Braintrust metric mapping (Anthropic)
 
 SDKs **MUST** emit the following span metrics. All are optional — omit any metric whose source field is absent from the Anthropic response.
 
@@ -98,6 +99,74 @@ Consequences for SDK implementors:
 - For Anthropic, emit `prompt_cache_creation_tokens` only when no per-TTL breakdown is available.
 - Do not synthesize missing per-TTL fields from the aggregate.
 - Prefer not to emit the aggregate and per-TTL metrics together in the same span, even though the server can tolerate both.
+
+---
+
+## AWS Bedrock
+
+Bedrock exposes prompt caching through the Converse API. The mechanics differ from Anthropic's in
+three ways that matter to instrumentation, even when the underlying model is a Claude model.
+
+### Request shape
+
+Bedrock marks a cacheable prefix with a standalone `cachePoint` block appended to `system`,
+`messages`, or `toolConfig.tools`, rather than attaching `cache_control` to an existing block:
+
+```json
+{
+  "system": [
+    { "text": "<long cacheable prefix>" },
+    { "cachePoint": { "type": "default" } }
+  ]
+}
+```
+
+SDKs **MUST** pass `cachePoint` blocks through unchanged, and **MUST NOT** synthesize them.
+
+### No TTL tiers
+
+Bedrock exposes no TTL selection — there is no equivalent of Anthropic's 5m/1h split. Bedrock spans
+therefore **MUST** emit the aggregate `prompt_cache_creation_tokens` metric and **MUST NOT** emit
+`prompt_cache_creation_5m_tokens` or `prompt_cache_creation_1h_tokens`.
+
+### Braintrust metric mapping
+
+| Braintrust metric              | Source on Converse `usage` | Notes                                       |
+| ------------------------------ | -------------------------- | ------------------------------------------- |
+| `prompt_cached_tokens`         | `cacheReadInputTokens`     | Cache reads                                 |
+| `prompt_cache_creation_tokens` | `cacheWriteInputTokens`    | Cache writes; no TTL breakdown exists        |
+
+Bedrock also returns `cacheReadInputTokenCount` and `cacheWriteInputTokenCount` as aliases of the
+same two values. SDKs **SHOULD** read the `...InputTokens` spelling and **MUST NOT** emit both.
+
+`usage.cacheDetails` (per-checkpoint `{inputTokens, ttl}` entries) has no metric mapping: a metric
+must be a single number, and the entries do not distinguish reads from writes. When captured, keep
+it as provider metadata.
+
+### Totals
+
+Bedrock reports `inputTokens` **exclusive** of cache reads and writes, but folds both into
+`totalTokens`. So `prompt_tokens` **MUST** roll the cache counts back in, while `tokens` **MUST**
+preserve the provider's own total rather than recomputing it:
+
+```
+prompt_tokens    = inputTokens + cacheReadInputTokens + cacheWriteInputTokens
+completion_tokens = outputTokens
+tokens           = totalTokens
+```
+
+Because `totalTokens` is reported independently, it doubles as a cross-check on the sum: a correct
+mapping always satisfies `tokens == prompt_tokens + completion_tokens`. A conformant implementation
+run against the Bedrock conformance test produces, on the cache-write turn:
+
+```
+inputTokens 12 + cacheWriteInputTokens 1175 + outputTokens 5 == totalTokens 1192
+```
+
+and the identical relationship on the cache-read turn with the 1175 counted as a read. An SDK that
+copies `inputTokens` straight into `prompt_tokens` reports 12 instead of 1187 — a ~100x undercount
+that flows directly into estimated cost, and which leaves the cache metrics larger than the total
+they are defined to be a subset of.
 
 ---
 
