@@ -153,12 +153,23 @@ type MediaOperationOutput = {
 `operation` is the provider-independent operation category, such as
 `"generate"`, `"edit"`, `"speech"`, `"transcribe"`, `"translate"`, or `"ocr"`.
 
+`output.annotations` is a free-form JSON value. It **SHOULD** use the
+representation that best preserves the useful non-media result for the
+operation. Depending on the API and request, it may be:
+
+- a plain text or Markdown string
+- provider-returned structured information
+- an object or array containing extraction details
+- a response conforming to a schema supplied by the user
+
+Binary media belongs in `output.content`, not in `output.annotations`.
+
 Only the parameter keys listed for the applicable API family may be captured.
 Unknown provider request fields **MUST NOT** be copied into `parameters`.
 
 Provider failures use the span's top-level `error` field. Safe partial artifacts
-may remain in `output.content`, and safe partial structured results may remain
-in `output.annotations`.
+may remain in `output.content`, and safe partial annotations may remain in
+`output.annotations`.
 
 ## Image generation, editing, and variation
 
@@ -267,20 +278,17 @@ Allowed input parameter keys:
 The source image or document goes in `input.content`. A page selector goes in
 `input.parameters.pages`.
 
-The canonical output uses `MediaOperationOutput`. `output.annotations` may
-contain the provider's structured page results, limited to:
-
-- page index or number
-- extracted text or Markdown
-- page dimensions
-- tables
-- bounding boxes and annotations
-- structured extraction results
-- references to returned page or crop images
+The canonical output uses `MediaOperationOutput`. `output.annotations` is
+free-form and **SHOULD** preserve the result in the form most useful to the
+caller. For example, it may be plain extracted text or Markdown, structured
+page/table/bounding-box data returned by the provider, or a response conforming
+to an extraction schema supplied by the user. These examples are not an
+allowlist.
 
 Returned page, crop, or figure images **MUST** also appear as image parts in
-`output.content`, with inline bytes converted to attachments. Structured
-annotations **MUST NOT** duplicate their base64 data.
+`output.content`, with inline bytes converted to attachments. Annotations may
+refer to those content parts but **MUST NOT** duplicate their binary or base64
+data.
 
 ## Video and long-running media operations
 
