@@ -932,17 +932,17 @@ For normalized content parts that are not constrained to a provider-native shape
 
 Preserve provider-supplied filenames when available.
 
-If a provider-native payload has a dedicated Braintrust UI normalizer, instrumentation MAY preserve that provider-native structure and replace only the raw media leaf with a `braintrust_attachment`. Otherwise, instrumentation SHOULD emit the normalized `image_url` or `file` content parts above. Provider-unsupported media should still be represented in the logged attempted input. Instrumentation MUST NOT rewrite a provider request into a different provider-supported shape to hide an error from the underlying API.
+For chat/message APIs, if a provider-native payload has a dedicated Braintrust UI normalizer, instrumentation MAY preserve that provider-native structure and replace only the raw media leaf with a `braintrust_attachment`. Otherwise, instrumentation SHOULD emit the normalized `image_url` or `file` content parts above. Dedicated media API surfaces always use the canonical structures in [Multimodal API surfaces](features/multimodal-api-surfaces.md). Provider-unsupported media should still be represented in the logged attempted input. Instrumentation MUST NOT rewrite a provider request into a different provider-supported shape to hide an error from the underlying API.
 
 ### Output payloads
 
-The same attachment rules apply to generated media in `output`. Generated media MUST be logged in the `output` payload, not in `metadata`. If the provider response already has an output item or content part containing inline media, preserve that provider response structure and replace only the binary leaf with a `braintrust_attachment`. If there is no provider-native structure to preserve, use the same normalized `image_url` and `file` content part shapes used for inputs.
+The same attachment rules apply to generated media in `output`. Generated media MUST be logged in the `output` payload, not in `metadata`. For chat/message APIs, if the provider response already has an output item or content part containing inline media, preserve that provider response structure and replace only the binary leaf with a `braintrust_attachment`. If there is no provider-native structure to preserve, use the same normalized `image_url` and `file` content part shapes used for inputs. Dedicated media API surfaces use the canonical `MediaOperationOutput` structure.
 
 - Chat audio outputs: attach binary audio data, preserve compact transcript/text fields, and record these audio metadata fields when the provider reports them: MIME type, byte size, and audio token metrics.
-- Image generation and image edit outputs: convert returned base64 image data from provider-specific result fields to image attachments. Preserve provider status, prompt/revised prompt, and model when the provider reports them.
+- Image generation and image edit outputs: convert returned base64 image data from provider-specific result fields to image attachments. Preserve prompt/revised prompt and model when the provider reports them.
 - Speech-to-text and OCR: log input media or documents as attachments. Log transcripts, pages, detected text, and structured extraction results as text/JSON. Attach any large returned page images or media artifacts.
 - Text-to-speech: log input text as normal request input and log generated audio as an attachment.
-- Video generation and other long-running media operations: when the wrapper waits or polls for completion, log the initial request and final media result on the `llm` span. If the wrapper only starts an operation, log the provider operation ID and status when available at return time.
+- Video generation and other long-running media operations: when the wrapper waits or polls for completion, log the initial request and final media result on the `llm` span. If the call returns before a media artifact is available, leave `output.content` empty and do not poll solely for tracing.
 
 Binary return values and one-shot response streams MUST preserve the
 application-visible provider value and follow
@@ -960,19 +960,19 @@ Streaming instrumentation MUST aggregate media chunks into the final `output` ra
 ### Multimodal API surfaces
 
 These API families follow the same attachment rules even when they are not
-chat/message APIs. SDK support may be phased in over time. The advisory
-provider method registry and normative specialized payload shapes are defined
-in [Multimodal API surfaces](features/multimodal-api-surfaces.md).
+chat/message APIs. SDK support may be phased in over time. Their canonical
+specialized payload shapes are defined in
+[Multimodal API surfaces](features/multimodal-api-surfaces.md).
 
 | API family                              | Span shape                                                                                                                                                                  |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Image generation / editing              | One `llm` span per model execution; prompts/reference images are input and generated images are output attachments.                                                         |
-| Video generation                        | One `llm` span for the operation observed by the wrapper; operation IDs/status represent enqueue-only calls.                                                               |
+| Video generation                        | One `llm` span for the operation observed by the wrapper; `output.content` is empty when that call returns before an artifact is available.                                |
 | Audio transcription / speech generation | Speech-to-text attaches input audio and logs structured transcript output; text-to-speech logs text input and generated audio.                                              |
 | OCR / document understanding            | Attach input documents/images and log extracted text, structured pages, and returned page images.                                                                          |
 | Embeddings                              | Use the canonical embedding input and count-only output defined in [Embedding APIs](features/embeddings.md).                                                               |
 | Realtime / live APIs                    | Use a parent `task` span for the session with child spans for model turns, media exchanges, and tool calls. Detailed event lifecycle conventions are still a separate TODO. |
-| Prediction-style model runner APIs      | Use the canonical specialized media payload unless an explicit Braintrust UI normalizer supports the provider-native shape.                                                |
+| Prediction-style model runner APIs      | Use the canonical specialized media payload.                                                                                                                               |
 
 ---
 

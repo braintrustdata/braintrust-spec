@@ -7,18 +7,7 @@ understanding, video generation, and similar prediction-style APIs.
 
 Attachment discovery, upload, retry, and fallback behavior is defined in
 [Attachments](attachments.md). Embedding APIs have an additional contract in
-[Embedding APIs](embeddings.md). Long-lived realtime and live APIs are outside
-the scope of this document.
-
-## Conformance and API coverage
-
-The payload and lifecycle rules in this document are normative. Once an SDK
-instruments an API surface, its spans **MUST** conform to this document.
-
-The provider method registry at the end of this document is advisory. SDKs
-**SHOULD** instrument the listed stable inference methods when they already
-provide an integration for that provider, but omitting a listed method does not
-by itself make the SDK nonconformant.
+[Embedding APIs](embeddings.md).
 
 ## Span model
 
@@ -26,26 +15,74 @@ Each discrete model execution **MUST** produce exactly one `llm` span. A
 streaming response is still one model execution and **MUST NOT** produce one
 span per chunk.
 
-Direct-provider span names use:
-
-```text
-<provider>.<resource>.<operation>
-```
-
-Framework functions use the exported function name.
-
 Every span **MUST** include `metadata.model` and `metadata.provider`. The
 resolved model returned by the provider is preferred over the requested model.
 If the provider does not return a model, use the requested model.
 
+## Span payload
+
+Implementations **MUST** use the canonical span structures in this document.
+Provider-native request and response objects do not replace these structures.
+
+The structures map to the Braintrust span payload as follows:
+
+| Structure | Span field | OTel attribute |
+| --- | --- | --- |
+| `MediaOperationInput` | `input` | `braintrust.input_json` |
+| `MediaOperationOutput` | `output` | `braintrust.output_json` |
+| Model and provider identifiers | `metadata.model` and `metadata.provider` | `braintrust.metadata` |
+| Model-call span type | `span_attributes.type = "llm"` | `braintrust.span_attributes` |
+| Provider failure | top-level `error` | standard span error handling |
+
+OTel attributes contain JSON strings. For example,
+`braintrust.input_json` is `JSON.stringify(input)` where `input` is the exact
+`MediaOperationInput` object defined below.
+
+The following complete span payload represents one generated image. The raw
+image bytes have been uploaded and replaced at their original logical position
+with a `braintrust_attachment` reference:
+
+```json
+{
+  "span_attributes": {
+    "type": "llm"
+  },
+  "input": {
+    "operation": "generate",
+    "prompt": "A red fox in a snowy forest",
+    "parameters": {
+      "n": 1,
+      "size": "1024x1024"
+    }
+  },
+  "output": {
+    "content": [
+      {
+        "type": "image_url",
+        "image_url": {
+          "url": {
+            "type": "braintrust_attachment",
+            "content_type": "image/png",
+            "filename": "generated-image.png",
+            "key": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+          }
+        }
+      }
+    ]
+  },
+  "metadata": {
+    "model": "example-image-model",
+    "provider": "example-provider"
+  }
+}
+```
+
 ## Canonical media parts
 
-Providers with a Braintrust UI normalizer explicitly covering the API family
-**MAY** preserve their provider-native request and response objects. Merely
-having a chat/message normalizer for a provider does not imply that its
-specialized media APIs have one.
-
-All other implementations **MUST** use the canonical structures below.
+Every media item in `input.content` and `output.content` **MUST** use one of the
+canonical `MediaPart` structures below. Media parts and attachment references
+belong in these content arrays, not in `metadata` or a separate attachment
+list.
 
 ```ts
 type AttachmentOrExternal =
@@ -69,7 +106,6 @@ type MediaPart =
         height?: number;
       };
       purpose?: "input" | "reference" | "mask";
-      index?: number;
       revised_prompt?: string;
     }
   | {
@@ -93,7 +129,12 @@ media just to populate them.
 
 ## Canonical operation payload
 
-The common payload envelope is:
+The value of the span's `input` field **MUST** be a `MediaOperationInput`. The
+value of the span's `output` field **MUST** be a `MediaOperationOutput` when an
+output is available. The same values are JSON-serialized into
+`braintrust.input_json` and `braintrust.output_json` by OTel instrumentation.
+
+The canonical payload structures are:
 
 ```ts
 type MediaOperationInput = {
@@ -104,8 +145,6 @@ type MediaOperationInput = {
 };
 
 type MediaOperationOutput = {
-  status?: "queued" | "in_progress" | "completed" | "failed" | "cancelled";
-  operation_id?: string;
   content: MediaPart[];
   annotations?: unknown;
 };
@@ -116,13 +155,10 @@ type MediaOperationOutput = {
 
 Only the parameter keys listed for the applicable API family may be captured.
 Unknown provider request fields **MUST NOT** be copied into `parameters`.
-Provider-native shapes allowed by an explicit UI normalizer are not required to
-use the `parameters` object, but remain subject to the general data-capturing
-policy.
 
-Errors use the span's top-level `error` field. A failed call may retain partial
-`output`, but instrumentation **MUST NOT** represent a provider failure only as
-`output.status = "failed"`.
+Provider failures use the span's top-level `error` field. Safe partial artifacts
+may remain in `output.content`, and safe partial structured results may remain
+in `output.annotations`.
 
 ## Image generation, editing, and variation
 
@@ -147,13 +183,12 @@ Generated images go in `output.content` as image parts. The following compact
 fields are allowed on a generated image part when reported by the provider:
 
 - `revised_prompt`
-- `index`
 - `width`
 - `height`
 
 Each returned image **MUST** remain a distinct ordered content part. An SDK
 **MUST NOT** log only the first image when the provider returns multiple
-results.
+results. Its position in `output.content` preserves its provider result order.
 
 ## Speech generation
 
@@ -185,11 +220,11 @@ Allowed input parameter keys:
 The source audio goes in `input.content` as a file part. Context or bias text
 goes in `input.prompt`.
 
-The canonical output is:
+The transcript goes in `output.content` as one text part. Transcript metadata
+goes in `output.annotations` using this structure:
 
 ```ts
-type TranscriptionOutput = {
-  text: string;
+type TranscriptionAnnotations = {
   language?: string;
   duration?: number;
   segments?: unknown[];
@@ -201,8 +236,25 @@ type TranscriptionOutput = {
 structured timestamp, speaker, and confidence objects. They **MUST NOT**
 contain a second copy of the complete input media.
 
-Translation uses the same output shape. `language` identifies the output
-language when reported by the provider.
+For example, a transcription result has the following span `output`:
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Welcome to Braintrust."
+    }
+  ],
+  "annotations": {
+    "language": "en",
+    "duration": 1.4
+  }
+}
+```
+
+Translation uses the same output structure. `annotations.language` identifies
+the output language when reported by the provider.
 
 ## OCR and document understanding
 
@@ -228,8 +280,7 @@ contain the provider's structured page results, limited to:
 
 Returned page, crop, or figure images **MUST** also appear as image parts in
 `output.content`, with inline bytes converted to attachments. Structured
-annotations may refer to those parts by their ordered index but **MUST NOT**
-duplicate their base64 data.
+annotations **MUST NOT** duplicate their base64 data.
 
 ## Video and long-running media operations
 
@@ -244,10 +295,9 @@ Allowed input parameter keys:
 Prompts and reference media use the normal input fields. Completed video or
 other media artifacts use file parts in `output.content`.
 
-If a wrapper returns after starting an asynchronous operation, its span closes
-with `output.operation_id`, the status available at return time, and an empty
-`output.content`. Poll/retrieve calls are separate spans if they are
-instrumented.
+If a call returns before a media artifact is available, `output.content` is
+empty. Instrumentation **MUST NOT** perform additional polling solely to obtain
+an artifact for tracing.
 
 If a higher-level wrapper waits or polls until completion as one user-visible
 operation, it **MAY** keep one `llm` span open and record the final artifact on
@@ -269,58 +319,3 @@ according to the general instrumentation guide:
 Missing usage values **MUST** be omitted rather than fabricated. Byte counts,
 dimensions, durations, and artifact counts belong in the canonical payload,
 not in `metrics`.
-
-## Advisory provider registry
-
-This registry reflects stable JavaScript/TypeScript surfaces associated with
-the open multimodal SDK issues as of July 2026. Equivalent methods in other
-language SDKs use the same operation contract.
-
-| Provider / framework | API surface | Canonical span name |
-| --- | --- | --- |
-| OpenAI | `images.generate` | `openai.images.generate` |
-| OpenAI | `images.edit` | `openai.images.edit` |
-| OpenAI | `images.createVariation` | `openai.images.createVariation` |
-| OpenAI | `audio.speech.create` | `openai.audio.speech.create` |
-| OpenAI | `audio.transcriptions.create` | `openai.audio.transcriptions.create` |
-| OpenAI | `audio.translations.create` | `openai.audio.translations.create` |
-| OpenAI | Chat Completions with audio input/output | existing Chat Completion span name |
-| Google GenAI | `models.generateImages` | `google.models.generateImages` |
-| Google GenAI | `models.generateContent` / `generateContentStream` with media output | existing generate-content span name |
-| Vercel AI SDK | `generateImage` | `generateImage` |
-| Hugging Face Inference | `textToImage` | `huggingface.textToImage` |
-| Mistral | `audio.speech.complete` | `mistral.audio.speech.complete` |
-| Mistral | `audio.transcriptions.complete` | `mistral.audio.transcriptions.complete` |
-| Mistral | `ocr.process` | `mistral.ocr.process` |
-| Groq | `audio.speech.create` | `groq.audio.speech.create` |
-| Groq | `audio.transcriptions.create` | `groq.audio.transcriptions.create` |
-| Groq | `audio.translations.create` | `groq.audio.translations.create` |
-
-Upstream method names change over time. The registry should be updated when a
-provider renames or replaces a stable surface; such a rename does not change
-the provider-independent span contract.
-
-Upstream references:
-
-- [OpenAI image generation](https://developers.openai.com/api/docs/guides/image-generation)
-  and [audio](https://developers.openai.com/api/docs/guides/audio)
-- [Google image generation](https://ai.google.dev/gemini-api/docs/image-generation)
-- [Vercel AI SDK `generateImage`](https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-image)
-- [Hugging Face inference API](https://huggingface.co/docs/huggingface.js/en/inference/README)
-- [Mistral audio](https://docs.mistral.ai/capabilities/audio/) and
-  [OCR](https://docs.mistral.ai/capabilities/document_ai/basic_ocr)
-- [Groq TypeScript API](https://github.com/groq/groq-typescript/blob/main/api.md)
-
-## Required implementation scenarios
-
-SDK implementations should cover these scenarios in their own tests:
-
-| Scenario | Expected result |
-| --- | --- |
-| Multiple generated images | Order is preserved and each result becomes a distinct attachment. |
-| Image edit with source and mask | Both inputs are captured with their purpose and bytes are not duplicated. |
-| Speech returned as buffer vs stream | Both forms produce the same canonical output shape. |
-| Timestamped/diarized transcription | Text, language, timestamps, and speaker data are retained; source audio is attached. |
-| OCR with returned page images | Images are attached and structured annotations contain no base64 duplicate. |
-| Enqueue-only video call | Operation ID/status are recorded and no final artifact is fabricated. |
-| Provider failure with partial output | Safe partial output is retained and top-level `error` is populated. |
