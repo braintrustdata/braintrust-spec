@@ -665,7 +665,24 @@ Instrumentation MAY include the following common LLM request configuration field
 
 An integration MAY also include JSON-serializable, domain-specific metadata that is useful to users, but it MUST enumerate every captured field in an explicit integration-level allowlist. Instrumentation MUST select allowlisted fields individually and MUST NOT copy or spread arbitrary request configuration or provider metadata into span metadata.
 
-Tool-related metadata fields are specified in [Available tool definitions](#available-tool-definitions). Prompt provenance metadata fields are specified in [Prompt metadata](#prompt-metadata). Other metadata fields MUST be defined by this guide or an integration-specific allowlist before SDKs emit them.
+#### Provider correlation IDs
+
+Providers return identifiers that tie a span back to their own record of the call — the value you quote when escalating to provider support. Capture them where they are available; a provider that returns none simply yields no field, which is not an error.
+
+| Field                        | Where it lives                                                                                                                | Required                                            |
+|------------------------------|-------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|
+| `response_id`                | Top-level `id` of the response body: `resp_` (OpenAI Responses), `chatcmpl-` (OpenAI Chat Completions), `msg_` (Anthropic)    | SHOULD when the response carries one                |
+| `x-request-id`, `request-id` | The provider's correlation response header, keyed by the header's own name: `x-request-id` (OpenAI), `request-id` (Anthropic) | MAY, where the integration can see response headers |
+
+Values are opaque and MUST NOT be parsed or validated — OpenAI's `x-request-id` returns both `req_`-prefixed values and bare UUIDs.
+
+For a streaming call, `response_id` MUST come from the reassembled stream so it matches what a non-streaming call reports. On both providers the id appears only in the opening event (`response.created`, `message_start`), so an integration that rebuilds the response from deltas has to carry it through explicitly.
+
+An error response carries no `response_id`, leaving the header as the only identifier available — so header capture SHOULD NOT be a step that an empty or unparseable body can skip.
+
+Headers are subject to the allowlist rule above, and outbound request headers additionally carry the caller's credentials: only the names listed here may be read onto a span.
+
+Tool-related metadata fields are specified in [Available tool definitions](#available-tool-definitions). Prompt provenance metadata fields are specified in [Prompt metadata](#prompt-metadata). Provider correlation identifiers are specified in [Provider correlation IDs](#provider-correlation-ids). Other metadata fields MUST be defined by this guide or an integration-specific allowlist before SDKs emit them.
 
 ### Metrics
 
