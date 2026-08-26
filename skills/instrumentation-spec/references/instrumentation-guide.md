@@ -81,7 +81,7 @@ The `metrics` field is an object of string keys to numeric values. Instrumentati
 | `prompt_tokens`       | Input/prompt token count (LLM spans)                                                 |
 | `completion_tokens`   | Output/completion token count, including reported reasoning usage (LLM spans)        |
 | `tokens`              | Provider-reported total token count, or an accurate computed total (LLM spans)       |
-| `time_to_first_token` | Seconds from request start to the first generated token or chunk                     |
+| `time_to_first_token` | For text output, seconds to the first model-generated token or text chunk; for multimodal output, seconds to the first content-bearing output event |
 
 ### Context
 
@@ -774,9 +774,9 @@ The SDK MUST accumulate streamed chunks and produce a single complete `input` an
 
 | Metric                | Type   | Description                                                 |
 | --------------------- | ------ | ----------------------------------------------------------- |
-| `time_to_first_token` | number | Seconds from request initiation to the first chunk received |
+| `time_to_first_token` | number | For text output, seconds to the first model-generated token or text chunk; for multimodal output, seconds to the first content-bearing output event |
 
-This metric MUST be captured for all streaming calls. It is measured by the SDK, not reported by the provider.
+This metric MUST be captured for all streaming calls. It is measured by the SDK, not reported by the provider. For text output, the first model-generated token or text chunk satisfies `time_to_first_token`. For multimodal output, the first content-bearing text, audio, image, or video event satisfies it. Empty deltas, provider acknowledgements, handshake messages, usage-only events, and other control chunks do not.
 
 ### Token counts from stream metadata
 
@@ -830,7 +830,9 @@ When a multi-turn conversation includes prior reasoning output, the full context
 
 When an instrumented request or response contains inline binary media (images, PDFs, audio, video, etc.), SDKs MUST replace the raw media with Braintrust attachment references inside the log row's `input` or `output` payload. Do not add a separate attachment list. The lower-level scan, upload, retry, and fallback behavior is specified in [Attachments](features/attachments.md).
 
-Embedding APIs follow [Embedding APIs](features/embeddings.md).
+Dedicated image, audio, OCR, video, and prediction endpoints follow
+[Multimodal API surfaces](features/multimodal-api-surfaces.md). Embedding APIs
+follow [Embedding APIs](features/embeddings.md).
 
 Attachment conversion is both a storage optimization and a display requirement. When conversion succeeds, raw media bytes MUST NOT remain inline in `input` or `output`. If conversion or upload fails, instrumentation MUST preserve the original payload and MUST NOT throw an exception that prevents span export.
 
@@ -930,39 +932,47 @@ For normalized content parts that are not constrained to a provider-native shape
 
 Preserve provider-supplied filenames when available.
 
-If a provider-native payload has a dedicated Braintrust UI normalizer, instrumentation MAY preserve that provider-native structure and replace only the raw media leaf with a `braintrust_attachment`. Otherwise, instrumentation SHOULD emit the normalized `image_url` or `file` content parts above. Provider-unsupported media should still be represented in the logged attempted input. Instrumentation MUST NOT rewrite a provider request into a different provider-supported shape to hide an error from the underlying API.
+For chat/message APIs, if a provider-native payload has a dedicated Braintrust UI normalizer, instrumentation MAY preserve that provider-native structure and replace only the raw media leaf with a `braintrust_attachment`. Otherwise, instrumentation SHOULD emit the normalized `image_url` or `file` content parts above. Dedicated media API surfaces always use the canonical structures in [Multimodal API surfaces](features/multimodal-api-surfaces.md). Provider-unsupported media should still be represented in the logged attempted input. Instrumentation MUST NOT rewrite a provider request into a different provider-supported shape to hide an error from the underlying API.
 
 ### Output payloads
 
-The same attachment rules apply to generated media in `output`. Generated media MUST be logged in the `output` payload, not in `metadata`. If the provider response already has an output item or content part containing inline media, preserve that provider response structure and replace only the binary leaf with a `braintrust_attachment`. If there is no provider-native structure to preserve, use the same normalized `image_url` and `file` content part shapes used for inputs.
+The same attachment rules apply to generated media in `output`. Generated media MUST be logged in the `output` payload, not in `metadata`. For chat/message APIs, if the provider response already has an output item or content part containing inline media, preserve that provider response structure and replace only the binary leaf with a `braintrust_attachment`. If there is no provider-native structure to preserve, use the same normalized `image_url` and `file` content part shapes used for inputs. Dedicated media API surfaces use the canonical `MediaOperationOutput` structure.
 
 - Chat audio outputs: attach binary audio data, preserve compact transcript/text fields, and record these audio metadata fields when the provider reports them: MIME type, byte size, and audio token metrics.
-- Image generation and image edit outputs: convert returned base64 image data from provider-specific result fields to image attachments. Preserve provider status, prompt/revised prompt, and model when the provider reports them.
+- Image generation and image edit outputs: convert returned base64 image data from provider-specific result fields to image attachments. Preserve prompt/revised prompt and model when the provider reports them.
 - Speech-to-text and OCR: log input media or documents as attachments. Log transcripts, pages, detected text, and structured extraction results as text/JSON. Attach any large returned page images or media artifacts.
 - Text-to-speech: log input text as normal request input and log generated audio as an attachment.
-- Video generation and other long-running media operations: when the wrapper waits or polls for completion, log the initial request and final media result on the `llm` span. If the wrapper only starts an operation, log the provider operation ID and status when available at return time.
+- Video generation and other long-running media operations: when the wrapper waits or polls for completion, log the initial request and final media result on the `llm` span. If the call returns before a media artifact is available, leave `output.content` empty and do not poll solely for tracing.
+
+Binary return values and one-shot response streams MUST preserve the
+application-visible provider value and follow
+[Binary output values and streams](features/attachments.md#binary-output-values-and-streams).
 
 ### Streaming multimodal outputs
 
 Streaming instrumentation MUST aggregate media chunks into the final `output` rather than dropping them or logging raw chunks as separate opaque blobs. The final span output SHOULD contain the same attachment-normalized shape as a non-streaming response.
 
 - Inline media output parts MUST be accumulated and converted to image or file attachments.
-- Streaming audio chunks SHOULD be aggregated into transcript/audio output. If binary audio data is retained, it MUST be converted to an attachment.
-- `time_to_first_token` and other streaming metrics remain computed from the stream timing even when final media attachment conversion happens at the end of the stream.
+- Provider-supplied transcript and text chunks MUST be aggregated in order.
+- Streaming audio chunks MUST be aggregated into transcript/audio output. If binary audio data is retained, it MUST be converted to an attachment.
+- `time_to_first_token` is measured to the first model-generated text token or chunk, or to the first content-bearing media event. Final media attachment conversion may happen later without changing that timing.
 
 ### Multimodal API surfaces
 
-These API families SHOULD follow the same attachment rules even when they are not chat/message APIs. SDK support may be phased in over time; this table defines the desired instrumentation shape without prescribing provider-specific APIs.
+These API families follow the same attachment rules even when they are not
+chat/message APIs. SDK support may be phased in over time. Their canonical
+specialized payload shapes are defined in
+[Multimodal API surfaces](features/multimodal-api-surfaces.md).
 
 | API family                              | Span shape                                                                                                                                                                  |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Image generation / editing              | One `llm` span per model execution. Input prompt/reference images are logged in `input`; generated images are attachments in `output`.                                      |
-| Video generation                        | One `llm` span for the operation observed by the wrapper. Inputs and final video artifacts use attachments; operation IDs/status remain in metadata or output.              |
-| Audio transcription / speech generation | Speech-to-text attaches input audio and logs transcript output. Text-to-speech logs text input and attaches generated audio output.                                         |
-| OCR / document understanding            | Attach input documents/images and log extracted text/structured page data as JSON.                                                                                          |
-| Multimodal embeddings                   | Use the canonical embedding input and count-only output defined in [Embedding APIs](features/embeddings.md).                                                               |
+| Image generation / editing              | One `llm` span per model execution; prompts/reference images are input and generated images are output attachments.                                                         |
+| Video generation                        | One `llm` span for the operation observed by the wrapper; `output.content` is empty when that call returns before an artifact is available.                                |
+| Audio transcription / speech generation | Speech-to-text attaches input audio and logs structured transcript output; text-to-speech logs text input and generated audio.                                              |
+| OCR / document understanding            | Attach input documents/images and log extracted text, structured pages, and returned page images.                                                                          |
+| Embeddings                              | Use the canonical embedding input and count-only output defined in [Embedding APIs](features/embeddings.md).                                                               |
 | Realtime / live APIs                    | Use a parent `task` span for the session with child spans for model turns, media exchanges, and tool calls. Detailed event lifecycle conventions are still a separate TODO. |
-| Prediction-style model runner APIs      | Log provider-native input/output JSON, converting any media fields with inline bytes/base64/data URLs into attachments.                                                     |
+| Prediction-style model runner APIs      | Use the canonical specialized media payload.                                                                                                                               |
 
 ---
 
@@ -1006,7 +1016,7 @@ LangChain may add its own intermediate spans (e.g. for chain steps, retrievers).
 
 ### Vercel AI SDK
 
-Instrument calls through the Vercel AI SDK's `generateText`, `streamText`, and related functions. Attribute prefix: `ai.*`. When tools are provided, these become agentic calls and MUST produce the full span tree.
+Instrument calls through the Vercel AI SDK's `generateText`, `streamText`, and related functions. Attribute prefix: `ai.*`. When tools are provided, these become agentic calls and MUST produce the full span tree. `generateImage` follows [Multimodal API surfaces](features/multimodal-api-surfaces.md).
 
 ---
 
@@ -1021,7 +1031,7 @@ Instrumentation MUST only emit the metric keys listed in this guide. The followi
 | `tokens`                          | number | LLM spans        | MUST\*   | Total tokens when the total is known             |
 | `prompt_tokens`                   | number | LLM spans        | MUST\*   | Input / prompt tokens                            |
 | `completion_tokens`               | number | Generative LLM spans | MUST\* | Output / completion tokens                    |
-| `time_to_first_token`             | number | Streaming spans  | MUST     | Seconds from request start to first chunk        |
+| `time_to_first_token`             | number | Streaming spans  | MUST     | For text, seconds to the first model-generated token/chunk; for multimodal output, seconds to the first content-bearing output event |
 | `completion_reasoning_tokens`     | number | Reasoning models | MUST\*   | Tokens used for model reasoning                  |
 | `prompt_cached_tokens`            | number | Cached responses | SHOULD   | Tokens read from provider cache                  |
 | `prompt_cache_creation_tokens`    | number | Cached responses | SHOULD   | Tokens written to provider cache                 |

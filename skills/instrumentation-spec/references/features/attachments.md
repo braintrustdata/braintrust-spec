@@ -21,9 +21,9 @@ This greatly reduces the size of spans with attachments.
 
 This replacement process is done by the Braintrust backend. Some SDKs do this as well to reduce the size of spans sent to our trace collector endpoints.
 
-## base64 span processing
+## Base64 span processing
 
-### scanning
+### Scanning
 
 The SDK scans the `braintrust.input_json` and `braintrust.output_json` span attributes for base64 attachment data. These attributes contain JSON-serialized LLM conversation messages.
 
@@ -33,7 +33,7 @@ Before doing any JSON parsing, use a combined regex heuristic as a fast-path che
 
 Use a minimum base64 string length threshold (e.g. 20 characters) in the heuristic to avoid false positives on short strings that happen to look like base64.
 
-### replacement
+### Replacement
 
 When the heuristic matches, parse the JSON and walk the tree. The walker should pass the current field name and node to each format's matcher. The first format that matches handles the replacement — no further recursion into that subtree. If no format matches, recurse into children.
 
@@ -45,7 +45,7 @@ The attachment replacement process should be designed so that:
 
 Cap the tree-walk recursion at a reasonable depth (e.g. 128) so that pathological deeply-nested input cannot exhaust the stack or otherwise wedge processing. When the cap is hit, return the subtree unchanged.
 
-#### partial-replacement safety
+#### Partial-replacement safety
 
 A single span may contain multiple attachments, and the uploader can reject some of them (queue full, uploader shut down due to a prior failure). The walk must not leave the span in a mixed state where some attachments are replaced with references and others are still inline base64 — that produces references whose data never gets uploaded, which is data loss.
 
@@ -66,7 +66,7 @@ The `filename` is derived from the MIME type (e.g. `image/png` -> `attachment.pn
 
 Where the reference object is placed depends on the vendor format. The Braintrust collector and UI understand these formats.
 
-### vendor-specific notes
+### Vendor-specific notes
 
 These are implementation notes for things that are easy to get wrong. Each vendor's message format and exact replacement behavior is defined by the btx spec YAML files in `spec/test/llm_span/<vendor>/attachments.yaml`.
 
@@ -77,6 +77,11 @@ Data URIs (`data:<mime>;base64,<data>`) appear as text node values. Only replace
 OpenAI-style content parts place image data under `image_url.url`, file data under `file.file_data`, and audio input data under `input_audio.data`. Replace the raw media leaf with the attachment reference and preserve sibling metadata such as filename, format, or MIME type.
 
 Generated-image output items may contain base64 image data in result fields such as `image_generation_call.result`. Replace the raw result leaf with the attachment reference and preserve compact sibling metadata.
+
+Streaming chat audio may arrive as ordered deltas containing an audio ID,
+transcript text, base64 data, and expiry metadata. Preserve the complete
+transcript and audio attachment in the final output. Do not log one attachment
+per delta.
 
 #### Bedrock (Converse API)
 
@@ -92,7 +97,78 @@ Gemini uses `{"inlineData": {"mimeType": "<mime>", "data": "<base64>"}}` or the 
 - **Images** (`image/*`): replace `inlineData`/`inline_data` with `image_url: {url: <ref>}`
 - **Non-images**: replace `inlineData`/`inline_data` with `file: {file_data: <ref>}`
 
-### upload flow
+## Binary output values and streams
+
+Specialized media APIs may return binary output directly rather than embedding
+base64 in a JSON response. Common forms include:
+
+- `Blob` or file-like objects
+- byte buffers, typed arrays, and array buffers
+- fetch `Response` objects
+- Node or Web readable streams
+
+The same attachment contract applies to these values. The logged output uses
+the canonical media shape from
+[Multimodal API surfaces](multimodal-api-surfaces.md), while the value returned
+to application code retains the provider SDK's public type and behavior.
+
+### Buffered values
+
+When a provider returns a `Blob`, buffer, typed-array view, array buffer, or
+file-like object, instrumentation **MUST**:
+
+1. Return the original application-visible value. Object identity, byte
+   contents, offsets, lengths, and mutability **MUST NOT** change.
+2. Copy the bytes into instrumentation-owned storage before returning control
+   to the application. For a typed-array view, copy only its `byteOffset` and
+   `byteLength` range, not the entire backing array buffer. This snapshot is
+   the data enqueued for upload, so later application mutations cannot change
+   the attachment.
+3. Put the resulting attachment reference in the canonical `output.content`
+   media part described by
+   [Multimodal API surfaces](multimodal-api-surfaces.md#canonical-media-parts).
+   The attachment-shaped value is logged only; it does not replace the value
+   returned to the application.
+
+Instrumentation **MUST NOT** detach or transfer an array buffer, mutate or
+consume the provider value, or serialize binary bytes as a JSON number array.
+
+Determine `content_type` using the first available source below:
+
+1. provider response metadata
+2. an HTTP `Content-Type` header
+3. the file-like value's MIME-type property, such as `Blob.type`
+4. the request's explicit output format
+5. an unambiguous provider-method default
+
+Determine `filename` using the first available source below:
+
+1. a provider-supplied filename
+2. an HTTP `Content-Disposition` filename
+3. the file-like value's name
+4. a filename derived from the resolved content type, such as
+   `attachment.mp3` for `audio/mpeg`
+
+If `content_type` cannot be resolved, instrumentation **MUST NOT** enqueue an
+upload or create a `braintrust_attachment`. It leaves the span's existing
+output unchanged and **MUST NOT** inspect or sniff the bytes to infer a type.
+
+### One-shot streams
+
+Instrumentation **MUST NOT** pre-consume a `Response`, Node readable stream,
+or Web readable stream. It observes bytes only through the application's read
+path, and the application **MUST** observe the same chunks, order, backpressure,
+errors, and cancellation behavior as it would without instrumentation.
+
+When `content_type` can be resolved and the stream ends successfully,
+instrumentation **MUST** concatenate the observed chunks, enqueue exactly one
+upload, and log exactly one attachment. If the application does not consume
+the stream to completion, or the stream is cancelled or ends with an error,
+instrumentation **MUST NOT** upload or log a partial attachment. It still
+exports the span using any non-binary output metadata available. Content type
+and filename resolution use the same rules as buffered values.
+
+### Upload flow
 
 Each attachment upload is a three-step process against the Braintrust API:
 
@@ -162,7 +238,7 @@ On failure, report an error status instead:
 
 All HTTP requests in the upload flow should use exponential backoff with retry on 5xx errors and network failures. Do not retry 4xx client errors. Reasonable defaults: 8 retries, 500ms initial backoff, doubling each attempt.
 
-### error handling
+### Error handling
 
 The attachment replacement is an optimization, not a hard requirement. The Braintrust backend can handle raw base64 data in spans. The error policy depends on the kind of error:
 
@@ -174,7 +250,7 @@ Log a warning when the uploader shuts itself down due to an upload-pipeline erro
 
 Once the uploader has shut down, any spans already exported with attachment references whose uploads did not complete will refer to missing storage objects. This is an accepted trade-off — partial-replacement safety (see [replacement](#replacement)) only guarantees consistency within a single span's walk, not across spans.
 
-### otel SDK impl
+### OTel SDK implementation
 
 OTel SDKs hook into the span lifecycle via a custom `SpanProcessor`. The attachment processing runs in the `onEnd` callback, which is called synchronously on the thread that ends the span.
 
@@ -220,6 +296,6 @@ If the caller provides a deadline (e.g. a graceful-shutdown budget), the total w
 
 Provide a config flag to disable attachment processing entirely (e.g. `BRAINTRUST_AUTO_CONVERT_AI_ATTACHMENTS=false`). When disabled, the span processor skips the scan and passes spans through unmodified. The default should be `true`.
 
-### native SDK impl
+### Native SDK implementation
 
 Native SDKs should follow the canonical placement and provider mapping rules in [Multimodal / Attachments](../instrumentation-guide.md#multimodal--attachments). This document covers the shared conversion and upload mechanics.

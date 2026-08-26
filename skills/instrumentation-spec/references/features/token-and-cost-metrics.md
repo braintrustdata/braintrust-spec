@@ -33,7 +33,7 @@ All token counts MUST be non-negative integers. Omit a metric when the provider 
 | `prompt_audio_tokens` | integer | SHOULD when reported | Input audio tokens. These are a subset of `prompt_tokens`, not additional tokens. |
 | `completion_audio_tokens` | integer | SHOULD when reported | Output audio tokens. These are a subset of `completion_tokens`, not additional tokens. |
 | `completion_image_tokens` | integer | SHOULD when reported | Output image tokens. These are a subset of `completion_tokens`, not additional tokens. |
-| `time_to_first_token` | number | MUST for streaming spans | Seconds from request start to first streamed token or chunk. |
+| `time_to_first_token` | number | MUST for streaming spans | For text output, seconds from request start to the first model-generated token or text chunk; for multimodal output, seconds to the first content-bearing output event. |
 | `estimated_cost` | number | MAY | Explicit per-span total cost override in dollars. Must be finite. |
 
 `input_tokens`, `output_tokens`, and `total_tokens` are accepted by some OpenTelemetry ingestion adapters and normalized to `prompt_tokens`, `completion_tokens`, and `tokens`. SDKs emitting Braintrust-native metrics MUST use the canonical Braintrust names directly.
@@ -42,6 +42,10 @@ Embedding spans have no generated-token component. They emit
 `prompt_tokens` and `tokens` only when reported and MUST omit
 `completion_tokens` rather than fabricate zero. See
 [Embeddings](embeddings.md#metrics).
+
+For multimodal output, a content-bearing event contains generated text or media
+data. Empty deltas, handshake messages, acknowledgements, usage-only events,
+and other control events do not satisfy `time_to_first_token`.
 
 Provider usage fields sometimes divide prompt or completion usage into additional categories. Those categories MUST be included in the canonical totals when the provider defines them as input or output usage. In particular, Google Gemini thoughts are included in `completion_tokens`, Google tool-use prompts are included in `prompt_tokens`, and Google's reported total is preserved as `tokens`; see [Google Gemini usage metadata](google-usage-metadata.md). SDKs MUST NOT invent custom metrics such as `tool_use_tokens` for provider-specific categories.
 
