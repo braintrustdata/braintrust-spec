@@ -186,3 +186,21 @@ they are defined to be a subset of.
   }
 }
 ```
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cache-token-metrics | Cache read/write token metrics | no | partial | yes | yes | yes | unknown | no |
+| ttl-split | 5m/1h cache-creation split | no | no | partial | yes | yes | unknown | no |
+| bedrock-cachepoint | Bedrock `cachePoint` blocks | no | no | yes | yes | yes | n/a | n/a |
+| beta-header-passthrough | 1h TTL beta header passthrough | unknown | yes | yes | yes | yes | unknown | n/a |
+
+```json
+{
+  "id": "prompt-cache",
+  "name": "Prompt caching",
+  "category": "Token & cost",
+  "providers": ["anthropic", "bedrock"]
+}
+```

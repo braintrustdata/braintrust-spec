@@ -125,7 +125,7 @@ if [[ "$REPLY" != "YOLO" ]]; then
     exit 0
 fi
 
-if ! ./scripts/test.sh; then
+if ! make test; then
     echo "Error: tests failed" >&2
     exit 1
 fi

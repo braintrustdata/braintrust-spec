@@ -9,6 +9,7 @@ Contains:
   - `skills/instrumentation-spec/references/features/` — feature-specific specs, designs, and API contracts
 - `test/` — yaml end-to-end test cases and assertions
 - `semconv/` — yaml cross-language constants such as envars and span attributes
+- `capabilities/` — SDK compatibility catalog configuration and generated CSV
 
 ## Consume the instrumentation skill
 

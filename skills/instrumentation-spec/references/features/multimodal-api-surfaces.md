@@ -327,3 +327,17 @@ according to the general instrumentation guide:
 Missing usage values **MUST** be omitted rather than fabricated. Byte counts,
 dimensions, durations, and artifact counts belong in the canonical payload,
 not in `metrics`.
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| multimodal-api-surfaces | Multimodal API surfaces | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+
+```json
+{
+  "id": "multimodal-api-surfaces",
+  "name": "Multimodal API surfaces",
+  "category": "Multimodal"
+}
+```

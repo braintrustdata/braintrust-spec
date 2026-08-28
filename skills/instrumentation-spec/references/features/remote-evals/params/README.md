@@ -79,3 +79,17 @@ The typical workflow: run the same dataset (same inputs) with different paramete
 ### Related Specs
 
 - [Remote Eval Dev Server](../server/README.md) -- The broader remote eval feature this builds on
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| remote-eval-parameters | Remote eval parameters | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+
+```json
+{
+  "id": "remote-eval-parameters",
+  "name": "Remote eval parameters",
+  "category": "Evals"
+}
+```

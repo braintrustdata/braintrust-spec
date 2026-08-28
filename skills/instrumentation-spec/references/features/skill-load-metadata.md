@@ -252,3 +252,17 @@ Skill tool spans are observed loads; they are implicit by default unless
 `metadata.skill_load_trigger = "explicit"` says the load was sourced from an
 explicit request. To inspect the raw load event, use
 `metadata.tool_name`.
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| skill-load-metadata | Skill load metadata | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+
+```json
+{
+  "id": "skill-load-metadata",
+  "name": "Skill load metadata",
+  "category": "Metadata"
+}
+```

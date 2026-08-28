@@ -299,3 +299,20 @@ Provide a config flag to disable attachment processing entirely (e.g. `BRAINTRUS
 ### Native SDK implementation
 
 Native SDKs should follow the canonical placement and provider mapping rules in [Multimodal / Attachments](../instrumentation-guide.md#multimodal--attachments). This document covers the shared conversion and upload mechanics.
+
+# SDK support
+
+| ID                 | Capability                                  | .NET | Go      | Java    | JS  | Python | Ruby | Rust |
+|--------------------|---------------------------------------------|------|---------|---------|-----|--------|------|------|
+| external-file-refs | External file references                    | no   | partial | yes     | yes | yes    | no   | no   |
+| inline-base64      | Inline base64 payloads                      | no   | partial | yes     | yes | yes    | no   | no   |
+| attachment-upload  | Converts payloads to Braintrust attachments | no   | no      | partial | yes | yes    | no   | no   |
+
+```json
+{
+  "id": "attachments",
+  "name": "Attachments",
+  "category": "Multimodal",
+  "providers": ["openai", "anthropic", "google", "bedrock"]
+}
+```

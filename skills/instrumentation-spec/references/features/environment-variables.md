@@ -327,3 +327,17 @@ SDK tests should cover these cases:
 | Constructor/setup runs with no immediate API key                                    | Setup succeeds if the SDK defers credential use                          |
 | Export/login/flush later needs a key and `.env.braintrust` key exists               | Operation waits for discovery and uses file key                          |
 | Export/login/flush later needs a key and no key exists                              | Operation fails with missing API key                                     |
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| environment-variables | Environment variable support | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+
+```json
+{
+  "id": "environment-variables",
+  "name": "SDK environment variables",
+  "category": "Configuration"
+}
+```

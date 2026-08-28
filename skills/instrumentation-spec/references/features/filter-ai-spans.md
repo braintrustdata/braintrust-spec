@@ -63,3 +63,17 @@ AI instrumentation libraries commonly add attributes to spans *after* the span h
 ## Implementation note
 
 OpenTelemetry-based SDKs might implement this as a span processor filter in `onEnd()`, rather than an OTel `Sampler` (Samplers run at span start time when AI-relevant attributes may not yet be present).
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ai-span-filtering | AI span filtering | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+
+```json
+{
+  "id": "filter-ai-spans",
+  "name": "Filter AI spans",
+  "category": "Tracing"
+}
+```

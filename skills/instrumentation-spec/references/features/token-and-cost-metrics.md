@@ -164,3 +164,20 @@ All rates are per million tokens. Cache-read and aggregate cache-write rates fal
   }
 }
 ```
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| prompt-completion-tokens | Prompt & completion token counts | yes | yes | yes | yes | yes | yes | yes |
+| time-to-first-token | `time_to_first_token` on streaming spans | no | yes | yes | yes | yes | partial | no |
+| reasoning-tokens | Reasoning token counts | no | yes | yes | yes | yes | unknown | unknown |
+| model-provider-attribution | Model & provider attribution for costing | partial | yes | yes | yes | yes | yes | partial |
+
+```json
+{
+  "id": "token-and-cost-metrics",
+  "name": "Token and cost metrics",
+  "category": "Token & cost"
+}
+```

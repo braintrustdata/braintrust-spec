@@ -221,3 +221,17 @@ This means SDK authors should think of dataset versioning as more than local con
 | Document | Purpose |
 |----------|---------|
 | [contracts.md](contracts.md) | Snapshot, environment-tag, and restore APIs and data shapes |
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| dataset-versioning | Dataset versioning | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+
+```json
+{
+  "id": "dataset-versions",
+  "name": "Dataset versioning",
+  "category": "Datasets"
+}
+```

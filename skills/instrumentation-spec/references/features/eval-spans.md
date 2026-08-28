@@ -67,3 +67,21 @@ The `_json` variants signal to the backend that the attribute is a JSON string a
 |-----------------|-----------------------------------------------------------------------|
 | name            | `my_custom_classifier_name`                                           |
 | span_attributes | `{type: classifier, purpose: scorer, my_custom_classifier_name: 0.8}` |
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| root-eval-span | One root eval span per case | yes | yes | yes | yes | yes | yes | yes |
+| per-score-metadata | Per-score metadata | yes | yes | no | yes | yes | yes | yes |
+| scorer-reads-trace | Trace readable by scorers | yes | no | yes | yes | yes | yes | no |
+| scorer-failure-fallback | Per-scorer failure fallback | yes | no | yes | no | no | no | no |
+| trials | Trials / repeats | no | partial | no | yes | yes | no | no |
+
+```json
+{
+  "id": "eval-spans",
+  "name": "Eval spans",
+  "category": "Evals"
+}
+```

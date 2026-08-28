@@ -126,3 +126,17 @@ interactions, not streams of intermediate events.
   "error": "Ticket service rejected the update"
 }
 ```
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tool-approval-metadata | Tool approval metadata | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+
+```json
+{
+  "id": "tool-approval-metadata",
+  "name": "Tool approval metadata",
+  "category": "Metadata"
+}
+```

@@ -1,0 +1,10 @@
+[tools]
+python = "3.13.3"
+
+[tasks.test]
+description = "Run unit tests, validate compatibility data, and check generated CSV"
+run = "./scripts/test.sh"
+
+[tasks.compatibility-csv]
+description = "Regenerate the compatibility CSV"
+run = "python scripts/compatibility_csv.py"

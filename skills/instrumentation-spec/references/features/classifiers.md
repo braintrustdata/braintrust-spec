@@ -298,3 +298,17 @@ When a classifier fails, the result includes:
   }
 }
 ```
+
+# SDK support
+
+| ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| classifier-spans | Classifier spans | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+
+```json
+{
+  "id": "classifiers",
+  "name": "Classifiers",
+  "category": "Evals"
+}
+```
