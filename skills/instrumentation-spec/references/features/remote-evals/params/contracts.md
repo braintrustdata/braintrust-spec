@@ -174,3 +174,20 @@ See the [Dev Server specification](../server/specification.md) for the full SSE 
 
 - [Braintrust: Remote evals guide](https://www.braintrust.dev/docs/evaluate/remote-evals)
 - [Dev Server specification](../server/specification.md) — full `POST /eval` and `GET /list` schemas
+
+# SDK support
+
+```yaml
+id: remote-eval-parameter-contracts
+name: Remote eval parameter contracts
+category: Evals
+support:
+  remote-eval-parameter-contracts:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
+    rust: "no"
+```

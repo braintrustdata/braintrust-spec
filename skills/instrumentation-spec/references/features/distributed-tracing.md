@@ -374,3 +374,36 @@ W3C context path (`extract_trace_context`) carries only hex ids by construction
 - `span.export()` followed by `start_span(parent=<slug>)` MUST round-trip
   correctly under the default hex ids (8-byte span id, 16-byte trace id): the
   child shares the parent's trace id and is parented to the parent's span id.
+
+# SDK support
+
+```yaml
+id: distributed-tracing
+name: Distributed Tracing
+category: Tracing
+support:
+  w3c-context-propagation:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "no"
+    rust: "no"
+  cross-process-parent:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "no"
+    rust: "no"
+  baggage-passthrough:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "no"
+    rust: "no"
+```

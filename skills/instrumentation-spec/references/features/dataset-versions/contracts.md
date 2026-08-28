@@ -776,3 +776,20 @@ Writes compensating rows so that the new dataset head matches the requested vers
 |--------|-----------|
 | `400 Bad Request` | Body is invalid, `version` is missing or malformed, or the restore query exceeds configured limits |
 | `403 Forbidden` | Caller lacks permission to update the dataset or is not authorized |
+
+# SDK support
+
+```yaml
+id: dataset-version-contracts
+name: Dataset versioning contracts
+category: Datasets
+support:
+  dataset-version-contracts:
+    dotnet: "no"
+    go: "no"
+    java: "no"
+    js: "yes"
+    python: "no"
+    ruby: "no"
+    rust: "no"
+```

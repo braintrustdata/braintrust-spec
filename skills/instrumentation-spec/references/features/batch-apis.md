@@ -217,3 +217,20 @@ spans. If an implementation has a hard resource limit, reaching it must
 produce an explicit diagnostic and leave incomplete work distinguishable and
 retryable. It **MUST NOT** report a fully instrumented batch while silently
 omitting requests.
+
+# SDK support
+
+```yaml
+id: batch-apis
+name: Batch APIs
+category: LLM APIs
+support:
+  batch-requests:
+    dotnet: "no"
+    go: "no"
+    java: "no"
+    js: "yes"
+    python: "no"
+    ruby: "no"
+    rust: "no"
+```

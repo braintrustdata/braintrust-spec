@@ -249,3 +249,20 @@ This document describes the scenarios and behaviors that an implementation must 
 **Input**: `POST /eval` with parameters and multiple test cases.
 
 **Expected**: Each test case's task invocation receives the same merged parameter map. Output reflects consistent parameter usage across all cases.
+
+# SDK support
+
+```yaml
+id: remote-eval-parameter-validation
+name: Remote eval parameter validation
+category: Evals
+support:
+  remote-eval-parameter-validation:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
+    rust: "no"
+```

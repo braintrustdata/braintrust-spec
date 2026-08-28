@@ -9,6 +9,7 @@ Contains:
   - `skills/instrumentation-spec/references/features/` — feature-specific specs, designs, and API contracts
 - `test/` — yaml end-to-end test cases and assertions
 - `semconv/` — yaml cross-language constants such as envars and span attributes
+- `capabilities/` — SDK compatibility catalog configuration and generated CSV
 
 ## Consume the instrumentation skill
 
@@ -25,3 +26,19 @@ This adds the following dependency to `agents.toml`:
 name = "instrumentation-spec"
 source = "braintrustdata/braintrust-spec"
 ```
+
+## Development
+
+Install [mise](https://mise.jdx.dev/getting-started.html), then run:
+
+```bash
+mise trust
+mise install
+mise run install-deps
+make test
+```
+
+mise manages the pinned Python and a project-local `.venv`; `requirements.txt`
+pins the YAML parser. Make targets install dependencies automatically.
+See [the compatibility catalog guide](capabilities/README.md) for the SDK support
+YAML format, generated views, and automated assessments.

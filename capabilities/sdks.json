@@ -1,0 +1,11 @@
+{
+  "sdks": [
+    { "key": "dotnet", "title": ".NET" },
+    { "key": "go", "title": "Go" },
+    { "key": "java", "title": "Java" },
+    { "key": "js", "title": "JS" },
+    { "key": "python", "title": "Python" },
+    { "key": "ruby", "title": "Ruby" },
+    { "key": "rust", "title": "Rust" }
+  ]
+}

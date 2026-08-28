@@ -164,3 +164,44 @@ All rates are per million tokens. Cache-read and aggregate cache-write rates fal
   }
 }
 ```
+
+# SDK support
+
+```yaml
+id: token-and-cost-metrics
+name: Token and cost metrics
+category: Token & cost
+support:
+  prompt-completion-tokens:
+    dotnet: "yes"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
+    rust: "yes"
+  time-to-first-token:
+    dotnet: "yes"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
+    rust: "yes"
+  reasoning-tokens:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
+    rust: "yes"
+  model-provider-attribution:
+    dotnet: "yes"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
+    rust: "partial"
+```
