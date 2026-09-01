@@ -379,9 +379,9 @@ W3C context path (`extract_trace_context`) carries only hex ids by construction
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| w3c-context-propagation | W3C `traceparent` propagation | yes | yes | yes | yes | yes | partial | unknown |
-| cross-process-parent | Attach to a parent span across processes | unknown | yes | yes | yes | yes | no | no |
-| baggage-passthrough | OTel baggage passthrough | n/a | yes | yes | n/a | n/a | n/a | n/a |
+| w3c-context-propagation | W3C `traceparent` propagation | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| cross-process-parent | Attach to a parent span across processes | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| baggage-passthrough | OTel baggage passthrough | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
 
 ```json
 {

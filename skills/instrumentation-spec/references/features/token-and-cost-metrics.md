@@ -169,10 +169,10 @@ All rates are per million tokens. Cache-read and aggregate cache-write rates fal
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| prompt-completion-tokens | Prompt & completion token counts | yes | yes | yes | yes | yes | yes | yes |
-| time-to-first-token | `time_to_first_token` on streaming spans | no | yes | yes | yes | yes | partial | no |
-| reasoning-tokens | Reasoning token counts | no | yes | yes | yes | yes | unknown | unknown |
-| model-provider-attribution | Model & provider attribution for costing | partial | yes | yes | yes | yes | yes | partial |
+| prompt-completion-tokens | Prompt & completion token counts | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| time-to-first-token | `time_to_first_token` on streaming spans | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| reasoning-tokens | Reasoning token counts | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| model-provider-attribution | Model & provider attribution for costing | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
 
 ```json
 {

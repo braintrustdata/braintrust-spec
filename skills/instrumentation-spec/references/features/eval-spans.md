@@ -72,11 +72,11 @@ The `_json` variants signal to the backend that the attribute is a JSON string a
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| root-eval-span | One root eval span per case | yes | yes | yes | yes | yes | yes | yes |
-| per-score-metadata | Per-score metadata | yes | yes | no | yes | yes | yes | yes |
-| scorer-reads-trace | Trace readable by scorers | yes | no | yes | yes | yes | yes | no |
-| scorer-failure-fallback | Per-scorer failure fallback | yes | no | yes | no | no | no | no |
-| trials | Trials / repeats | no | partial | no | yes | yes | no | no |
+| root-eval-span | One root eval span per case | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| per-score-metadata | Per-score metadata | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| scorer-reads-trace | Trace readable by scorers | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| scorer-failure-fallback | Per-scorer failure fallback | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| trials | Trials / repeats | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
 
 ```json
 {
