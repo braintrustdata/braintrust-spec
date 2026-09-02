@@ -179,7 +179,7 @@ See the [Dev Server specification](../server/specification.md) for the full SSE 
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| remote-eval-parameter-contracts | Remote eval parameter contracts | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| remote-eval-parameter-contracts | Remote eval parameter contracts | no | yes | yes | yes | yes | yes | no |
 
 ```json
 {

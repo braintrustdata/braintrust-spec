@@ -86,7 +86,7 @@ Related BTX specs:
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| google-usage-metadata | Google usage metadata | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| google-usage-metadata | Google usage metadata | no | yes | partial | yes | yes | no | no |
 
 ```json
 {

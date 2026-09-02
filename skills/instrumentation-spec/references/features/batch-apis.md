@@ -213,7 +213,7 @@ omitting requests.
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| batch-requests | Batch request instrumentation | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| batch-requests | Batch request instrumentation | no | no | no | yes | no | no | no |
 
 ```json
 {

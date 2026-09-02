@@ -332,7 +332,7 @@ SDK tests should cover these cases:
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| environment-variables | Environment variable support | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| environment-variables | Environment variable support | yes | yes | yes | yes | yes | no | yes |
 
 ```json
 {

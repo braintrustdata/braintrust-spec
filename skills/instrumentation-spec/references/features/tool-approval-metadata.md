@@ -131,7 +131,7 @@ interactions, not streams of intermediate events.
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tool-approval-metadata | Tool approval metadata | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| tool-approval-metadata | Tool approval metadata | no | no | no | yes | no | no | no |
 
 ```json
 {

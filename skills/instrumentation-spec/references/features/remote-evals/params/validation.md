@@ -254,7 +254,7 @@ This document describes the scenarios and behaviors that an implementation must 
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| remote-eval-parameter-validation | Remote eval parameter validation | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| remote-eval-parameter-validation | Remote eval parameter validation | no | yes | yes | yes | yes | yes | no |
 
 ```json
 {

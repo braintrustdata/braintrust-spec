@@ -781,7 +781,7 @@ Writes compensating rows so that the new dataset head matches the requested vers
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| dataset-version-contracts | Dataset versioning contracts | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| dataset-version-contracts | Dataset versioning contracts | no | no | no | yes | no | no | no |
 
 ```json
 {

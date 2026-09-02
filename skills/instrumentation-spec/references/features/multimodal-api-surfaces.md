@@ -332,7 +332,7 @@ not in `metrics`.
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| multimodal-api-surfaces | Multimodal API surfaces | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| multimodal-api-surfaces | Multimodal API surfaces | partial | partial | partial | partial | partial | partial | no |
 
 ```json
 {

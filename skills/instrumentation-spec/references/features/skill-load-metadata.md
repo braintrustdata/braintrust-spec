@@ -257,7 +257,7 @@ explicit request. To inspect the raw load event, use
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| skill-load-metadata | Skill load metadata | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| skill-load-metadata | Skill load metadata | no | no | no | no | no | no | no |
 
 ```json
 {

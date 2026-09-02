@@ -226,7 +226,7 @@ This means SDK authors should think of dataset versioning as more than local con
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| dataset-versioning | Dataset versioning | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| dataset-versioning | Dataset versioning | no | no | no | yes | no | no | no |
 
 ```json
 {

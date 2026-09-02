@@ -304,9 +304,9 @@ Native SDKs should follow the canonical placement and provider mapping rules in 
 
 | ID                 | Capability                                  | .NET | Go      | Java    | JS  | Python | Ruby | Rust |
 |--------------------|---------------------------------------------|------|---------|---------|-----|--------|------|------|
-| external-file-refs | External file references                    | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
-| inline-base64      | Inline base64 payloads                      | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
-| attachment-upload  | Converts payloads to Braintrust attachments | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| external-file-refs | External file references | no | yes | yes | yes | yes | no | no |
+| inline-base64 | Inline base64 payloads | no | yes | yes | yes | yes | no | no |
+| attachment-upload | Converts payloads to Braintrust attachments | no | yes | yes | yes | yes | no | no |
 
 ```json
 {

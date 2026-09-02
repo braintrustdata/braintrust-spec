@@ -303,7 +303,7 @@ When a classifier fails, the result includes:
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| classifier-spans | Classifier spans | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| classifier-spans | Classifier spans | yes | yes | yes | yes | yes | yes | no |
 
 ```json
 {

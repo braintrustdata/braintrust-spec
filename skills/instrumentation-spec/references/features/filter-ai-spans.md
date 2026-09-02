@@ -68,7 +68,7 @@ OpenTelemetry-based SDKs might implement this as a span processor filter in `onE
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ai-span-filtering | AI span filtering | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| ai-span-filtering | AI span filtering | no | partial | yes | partial | partial | partial | no |
 
 ```json
 {

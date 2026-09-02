@@ -178,7 +178,7 @@ SDK implementations **SHOULD** cover these scenarios in their own tests:
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| embedding-spans | Embedding instrumentation | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| embedding-spans | Embedding instrumentation | no | partial | partial | partial | partial | no | no |
 
 ```json
 {

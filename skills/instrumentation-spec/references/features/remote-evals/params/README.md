@@ -84,7 +84,7 @@ The typical workflow: run the same dataset (same inputs) with different paramete
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| remote-eval-parameters | Remote eval parameters | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| remote-eval-parameters | Remote eval parameters | no | yes | yes | yes | yes | yes | no |
 
 ```json
 {

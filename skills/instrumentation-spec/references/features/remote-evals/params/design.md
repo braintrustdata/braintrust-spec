@@ -162,7 +162,7 @@ Playground                    Dev Server                  Evaluator
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| remote-eval-parameter-design | Remote eval parameter design | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| remote-eval-parameter-design | Remote eval parameter design | no | yes | yes | yes | yes | yes | no |
 
 ```json
 {

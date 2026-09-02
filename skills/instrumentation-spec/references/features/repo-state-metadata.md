@@ -51,7 +51,7 @@ usernames and passwords. SCP-like SSH remotes such as
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| repo-state-metadata | Repo state metadata | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| repo-state-metadata | Repo state metadata | no | no | no | no | no | no | no |
 
 ```json
 {

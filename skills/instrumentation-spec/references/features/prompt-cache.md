@@ -191,10 +191,10 @@ they are defined to be a subset of.
 
 | ID | Capability | .NET | Go | Java | JS | Python | Ruby | Rust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| cache-token-metrics | Cache read/write token metrics | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
-| ttl-split | 5m/1h cache-creation split | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
-| bedrock-cachepoint | Bedrock `cachePoint` blocks | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
-| beta-header-passthrough | 1h TTL beta header passthrough | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| cache-token-metrics | Cache read/write token metrics | no | yes | yes | yes | yes | yes | yes |
+| ttl-split | 5m/1h cache-creation split | no | yes | yes | yes | yes | no | no |
+| bedrock-cachepoint | Bedrock `cachePoint` blocks | no | yes | yes | yes | yes | no | no |
+| beta-header-passthrough | 1h TTL beta header passthrough | no | yes | yes | yes | yes | yes | no |
 
 ```json
 {
