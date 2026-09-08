@@ -9,7 +9,93 @@ This guide covers:
 - **LLM provider APIs** — direct calls to OpenAI, Anthropic, Google (Gemini), and other model providers
 - **Framework integrations** — LangChain, Vercel AI SDK, LiteLLM, agent frameworks, and similar
 
-It does NOT cover the Braintrust evaluation/scoring APIs (`Eval`, `init_dataset`, etc.) or manual tracing (`@traced`, `start_span`).
+It also covers explicit capture APIs for operations excluded from
+auto-instrumentation. It does NOT cover the Braintrust evaluation/scoring APIs
+(`Eval`, `init_dataset`, etc.) or general-purpose manual tracing (`@traced`,
+`start_span`).
+
+### Auto-instrumentation eligibility
+
+Provider and framework auto-instrumentation MUST be limited to APIs that deliver
+the operation's result through the original invocation or its returned stream.
+Ordinary async/await calls and streaming responses are eligible, as are agentic
+calls that execute the tool-use loop and return or stream its result within that
+invocation. Eligibility does not depend on how long a call takes.
+
+Auto-instrumentation MUST NOT instrument APIs or request modes that submit work
+for separate execution and expose completion through a separate lifecycle. This
+includes:
+
+- **Submit + wait/poll/retrieve:** submitting a job, run, prediction, or batch and
+  then waiting for completion, checking status, or fetching the result.
+- **Submit + webhook/callback:** submitting work whose result arrives through a
+  later webhook or completion callback.
+- **Detached agent tasks:** starting or enqueueing an agent task and then
+  attaching a listener, subscribing to events, or reconnecting to observe it.
+
+The exclusion applies to submission, waiting, polling, retrieval, cancellation,
+and listener/webhook lifecycle APIs. Auto-instrumentation MUST NOT create spans
+for these calls or correlate them into a span for the overall operation. A
+convenience method that combines submission and waiting or polling into one
+call is still excluded, even if it returns the final result. If an API supports
+both direct and background execution, only the direct mode is eligible.
+
+These rules apply across all API families, including agentic and multimodal
+APIs, and take precedence over the span requirements below and in linked feature
+specifications. Excluded operations require manual tracing or an explicitly
+invoked [capture API](#manual-capture-for-excluded-apis), such as
+[Batch APIs](features/batch-apis.md).
+Generic HTTP or storage spans from instrumentation outside Braintrust's
+provider/framework integrations are outside the scope of this restriction.
+
+### Manual capture for excluded APIs
+
+Integrations MAY introduce explicit manual capture APIs for operations excluded
+from auto-instrumentation. When reliable correlation between submission and
+completion is possible, these APIs SHOULD support a two-part lifecycle:
+
+1. **Start capture at submission.** The caller invokes a capture API when
+   submitting work to the provider. It starts the applicable spans and records
+   as much of the available, specification-permitted data as possible, including
+   inputs, model/provider information, and allowlisted request metadata. Pending
+   spans have `metrics.start` and no `metrics.end`. The API returns resumable
+   context so the caller can associate the later result with these spans.
+2. **Capture the outcome and end the spans.** Once the caller obtains a response,
+   webhook event, listener event, or other terminal outcome, the caller passes
+   that data and the context to a capture API. It updates the original spans
+   with outputs, reported usage, or errors and ends them when the supplied data
+   establishes completion. Non-terminal updates leave the operation pending.
+
+Start capture SHOULD persist or export the initial span data at submission,
+rather than deferring all input capture until completion. Context MUST preserve
+span identity and allow completion in a later process without keeping live spans
+in memory. Repeated capture of the same outcome MUST NOT create duplicate spans.
+If capture begins before submission succeeds, the API MUST let the caller
+report a submission failure and end the pending spans with that error.
+
+When submission-time capture is unavailable, an integration MAY support
+capture from caller-supplied inputs and results together, provided they can be
+reliably correlated. It MUST NOT fabricate missing inputs, outcomes, or an
+unobserved start time. [Batch APIs](features/batch-apis.md) specifies the
+batch-specific lifecycle and collect-only behavior.
+
+#### Caller owns provider execution
+
+Manual capture APIs MUST only observe data supplied by the caller. They MUST
+NOT call providers, provider SDKs, or agent/framework SDKs on the caller's
+behalf. In particular, they MUST NOT submit or execute work, wait or poll for
+completion, retrieve results or provider files, cancel work, register webhooks,
+attach listeners, or subscribe to provider events. They MUST NOT accept a client
+or executable callback to perform these actions, or trigger them indirectly
+through lazy SDK objects or iterators. The caller performs every such action
+and explicitly passes the resulting data to the capture API.
+
+Capture APIs MAY return trace context or a copy of request parameters containing
+that context for the caller to submit. They MUST NOT send the request themselves
+or fetch missing data. Instrumentation-only failures MUST NOT prevent, retry,
+or otherwise change the caller's provider operation. These restrictions do not
+prevent exporting captured telemetry or uploading attachments to Braintrust
+according to this specification.
 
 ---
 
@@ -196,7 +282,7 @@ If the model returns tool calls, the completion API span captures them in its ou
 
 Batch APIs submit many model requests as a long-running provider job and make
 the results available later. They use one parent `task` span with one child
-`llm` span per batch request (per LLM query). Batch tracing is explicit and resumable; it should not be traced via auto-instrumentation, and Braintrust SDKs must not make provider API calls on the user's behalf.
+`llm` span per batch request (per LLM query). Batch tracing is explicit and resumable; it MUST NOT be traced via auto-instrumentation, and Braintrust SDKs must not make provider API calls on the user's behalf.
 
 See [Batch APIs](features/batch-apis.md) for the start/collect lifecycle,
 context propagation, collect-only fallback, and resource requirements. A
@@ -206,6 +292,11 @@ under this definition.
 ### Agentic APIs
 
 Agentic APIs manage the **full tool-use loop** internally. A single call from the user's perspective may trigger multiple LLM calls and tool executions under the hood. The SDK/framework handles sending tool results back to the model and continuing the conversation until the model produces a final response.
+
+Auto-instrumentation applies only to agentic calls that meet the
+[eligibility rules](#auto-instrumentation-eligibility). Starting a detached agent
+task and observing it later is excluded, even if the SDK offers a helper that
+waits for its result.
 
 **Examples:** OpenAI Responses API (with tools), Vercel AI SDK `generateText` / `streamText` (with tools), LangChain agents, OpenAI Agents SDK, Claude Agent SDK
 
@@ -942,7 +1033,7 @@ The same attachment rules apply to generated media in `output`. Generated media 
 - Image generation and image edit outputs: convert returned base64 image data from provider-specific result fields to image attachments. Preserve prompt/revised prompt and model when the provider reports them.
 - Speech-to-text and OCR: log input media or documents as attachments. Log transcripts, pages, detected text, and structured extraction results as text/JSON. Attach any large returned page images or media artifacts.
 - Text-to-speech: log input text as normal request input and log generated audio as an attachment.
-- Video generation and other long-running media operations: when the wrapper waits or polls for completion, log the initial request and final media result on the `llm` span. If the call returns before a media artifact is available, leave `output.content` empty and do not poll solely for tracing.
+- Video generation and other long-running media operations: auto-instrument only calls that return or stream the media result directly. Submit-and-wait, polling, webhook, and other detached job APIs are excluded by the [eligibility rules](#auto-instrumentation-eligibility), including wrappers that wait for the final artifact.
 
 Binary return values and one-shot response streams MUST preserve the
 application-visible provider value and follow
@@ -967,7 +1058,7 @@ specialized payload shapes are defined in
 | API family                              | Span shape                                                                                                                                                                  |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Image generation / editing              | One `llm` span per model execution; prompts/reference images are input and generated images are output attachments.                                                         |
-| Video generation                        | One `llm` span for the operation observed by the wrapper; `output.content` is empty when that call returns before an artifact is available.                                |
+| Video generation                        | One `llm` span for an eligible direct call; submit-and-wait and detached job APIs require explicit instrumentation.                                                         |
 | Audio transcription / speech generation | Speech-to-text attaches input audio and logs structured transcript output; text-to-speech logs text input and generated audio.                                              |
 | OCR / document understanding            | Attach input documents/images and log extracted text, structured pages, and returned page images.                                                                          |
 | Embeddings                              | Use the canonical embedding input and count-only output defined in [Embedding APIs](features/embeddings.md).                                                               |

@@ -10,6 +10,11 @@ still one request and follows [Embedding APIs](embeddings.md).
 
 ## Provider API ownership
 
+The guide's [manual capture rules](../instrumentation-guide.md#manual-capture-for-excluded-apis)
+apply. The start and collect APIs below specialize that two-part lifecycle for
+batches: capture inputs at submission, then capture results and end the same
+spans when the caller supplies the outcome.
+
 Braintrust batch instrumentation **MUST NOT** make provider API calls. In
 particular, it **MUST NOT**:
 
@@ -32,6 +37,10 @@ not Braintrust, sends that data to the provider. Implementations **SHOULD NOT**
 mutate caller-owned request objects when the language permits returning a copy.
 
 ## Explicit instrumentation only
+
+Batch APIs are subject to the guide's general
+[auto-instrumentation eligibility rules](../instrumentation-guide.md#auto-instrumentation-eligibility),
+which also exclude non-batch submit-and-wait and detached task APIs.
 
 Provider and framework auto-instrumentation **MUST NOT** create batch task or
 child spans for asynchronous batch lifecycle methods. This includes batch
