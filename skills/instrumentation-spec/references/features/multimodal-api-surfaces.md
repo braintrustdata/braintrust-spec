@@ -11,6 +11,11 @@ Attachment discovery, upload, retry, and fallback behavior is defined in
 
 ## Span model
 
+Auto-instrumentation is subject to the guide's
+[eligibility rules](../instrumentation-guide.md#auto-instrumentation-eligibility).
+The span requirements below do not authorize auto-instrumentation of excluded
+job or task lifecycles.
+
 Each discrete model execution **MUST** produce exactly one `llm` span. A
 streaming response is still one model execution and **MUST NOT** produce one
 span per chunk.
@@ -303,14 +308,20 @@ Allowed input parameter keys:
 Prompts and reference media use the normal input fields. Completed video or
 other media artifacts use file parts in `output.content`.
 
-If a call returns before a media artifact is available, `output.content` is
-empty. Instrumentation **MUST NOT** perform additional polling solely to obtain
-an artifact for tracing.
+Only calls that return or stream the media result directly are eligible for
+auto-instrumentation. APIs that submit a media job and expose its result through
+waiting, polling, retrieval, webhooks, or listeners **MUST NOT** be
+auto-instrumented. This includes higher-level wrappers that submit and wait or
+poll until completion as one user-visible operation.
 
-If a higher-level wrapper waits or polls until completion as one user-visible
-operation, it **MAY** keep one `llm` span open and record the final artifact on
-that span. Internal polling **MUST NOT** create duplicate LLM spans unless the
-polling calls are independently exposed to the user.
+Such job lifecycles require manual tracing or an explicitly invoked
+[manual capture API](../instrumentation-guide.md#manual-capture-for-excluded-apis).
+Where possible, capture inputs and start spans at submission, then capture the
+caller-supplied media result and end those spans when it arrives. Capture APIs
+**MUST NOT** invoke the provider or its SDK to submit work or obtain the result.
+For explicitly instrumented operations, if no media artifact is available,
+`output.content` is empty. Instrumentation **MUST NOT** perform additional
+polling solely to obtain an artifact for tracing.
 
 ## Metrics
 
