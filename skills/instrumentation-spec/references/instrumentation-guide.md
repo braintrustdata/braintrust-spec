@@ -611,7 +611,7 @@ Available tool definitions are the schemas and configuration the user passes to 
 
 #### Where they go
 
-Available tool definitions MUST be placed in `metadata.tools` on every `llm` span whose request makes one or more tools available. `metadata.tools` is an array of OpenAI Chat Completions-style tool objects for function-like tools, regardless of the underlying provider:
+Available tool definitions MUST be placed in `metadata.tools` on every `llm` span whose request makes one or more tools available. By default, `metadata.tools` is an array of OpenAI Chat Completions-style tool objects for function-like tools:
 
 ```json
 {
@@ -651,7 +651,7 @@ If a model call occurs inside an agentic tool-use loop, each child `llm` span MU
 
 #### Tool object schema
 
-Each function-like entry in `metadata.tools` MUST conform to the following shape:
+Except for the Anthropic carve-out below, each function-like entry in `metadata.tools` MUST conform to the following shape:
 
 | Field                  | Type         | Required | Description                                                                                                                                               |
 | ---------------------- | ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -665,20 +665,49 @@ If the user passed no tools in the request, `metadata.tools` MUST be omitted (do
 
 #### Tool request controls
 
-If the user passed a `tool_choice` (or equivalent) parameter to control whether/which tool the model uses, it MUST be captured in `metadata.tool_choice`. Valid values follow the OpenAI convention:
+If the user passed a `tool_choice` (or equivalent) parameter to control whether/which tool the model uses, it MUST be captured in `metadata.tool_choice`. Except for the Anthropic carve-out below, valid values follow the OpenAI convention:
 
 - `"auto"` — Model decides whether to call tools (default)
 - `"none"` — Model is forbidden from calling tools
 - `"required"` — Model MUST call at least one tool
 - `{ "type": "function", "function": { "name": "..." } }` — Model MUST call this specific tool
 
-Other provider-specific values (e.g. Anthropic's `{ "type": "any" }`, Google's `function_calling_config.mode`) MUST be normalized to one of the OpenAI values above before being placed in `metadata.tool_choice`.
+Provider-specific values other than Anthropic's (e.g. Google's `function_calling_config.mode`) MUST be normalized to one of the OpenAI values above before being placed in `metadata.tool_choice`.
 
-If the user passed `parallel_tool_calls`, `max_tool_calls`, or equivalent provider/framework settings, instrumentation MUST preserve them as `metadata.parallel_tool_calls` and `metadata.max_tool_calls` when supplied or known.
+If the user passed `parallel_tool_calls`, `max_tool_calls`, or equivalent provider/framework settings, instrumentation MUST preserve them as `metadata.parallel_tool_calls` and `metadata.max_tool_calls` when supplied or known. When Anthropic's native `tool_choice` object is preserved, its `disable_parallel_tool_use` field MAY remain in `metadata.tool_choice` instead of being translated into `metadata.parallel_tool_calls`.
 
 #### Converting from provider-native formats
 
-The SDK MUST convert the provider's tool definition format into the OpenAI shape above before placing it in metadata.
+Except for Anthropic, the SDK MUST convert the provider's tool definition format into the OpenAI shape above before placing it in metadata.
+
+#### Anthropic (provider-native)
+
+Consistent with the Anthropic input and output carve-outs, Anthropic instrumentation MAY preserve tool definitions and tool-choice controls in the provider-native request format.
+
+When preserved, user-defined function-like tools in `metadata.tools` use Anthropic's `name`, `description`, and `input_schema` fields:
+
+```json
+{
+  "metadata": {
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Get the current weather for a location",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "location": { "type": "string" }
+          },
+          "required": ["location"]
+        }
+      }
+    ],
+    "tool_choice": { "type": "auto" }
+  }
+}
+```
+
+Anthropic instrumentation MAY likewise preserve native `metadata.tool_choice` objects such as `{ "type": "auto" }`, `{ "type": "any" }`, `{ "type": "none" }`, or `{ "type": "tool", "name": "get_weather" }`, including provider-defined optional fields such as `disable_parallel_tool_use` when supplied. Instrumentation MUST preserve the request's semantics and MUST NOT translate an Anthropic-specific value incorrectly merely to fit the OpenAI convention.
 
 #### Provider-native tool types
 
