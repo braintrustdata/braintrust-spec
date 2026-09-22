@@ -129,6 +129,8 @@ Every instrumentation integration MUST control additional metadata fields with a
 
 This policy keeps telemetry reliable and predictable, avoids unnecessary data capture (which is critical for both data volume and PII), and facilitates building an opinionated product around our instrumentation. Additions to shared fields and integration-specific metadata allowlists should go through critical review.
 
+Users MAY explicitly transform outgoing span data with [Span customizer hooks](features/span-customizers.md), for example to redact content or add application metadata. These opt-in transformations do not change the default capture requirements for instrumentation integrations.
+
 ### Span types
 
 Braintrust supports the following `span_attributes.type` values:
@@ -175,16 +177,17 @@ The `metrics` field is an object of string keys to numeric values. Instrumentati
 
 The `context` field is an object containing textual information about the code and systems that produced the span. SDKs MUST preserve the existing caller-location fields when available; caller-location fields are optional because not every runtime or instrumentation path can determine them.
 
-| Field                              | Type            | Description                                                                                  |
-| ---------------------------------- | --------------- | -------------------------------------------------------------------------------------------- |
-| `caller_functionname`              | string optional | Function or method that created the span                                                     |
-| `caller_filename`                  | string optional | File where the span was created                                                              |
-| `caller_lineno`                    | number optional | Line number where the span was created                                                       |
-| `span_origin.name`                 | string optional | SDK, integration, Braintrust service, or exporter that emitted or exported the span           |
-| `span_origin.version`              | string optional | Version of the SDK, integration, Braintrust service, or exporter when known                  |
-| `span_origin.instrumentation.name` | string optional | Stable module, package, plugin, or OTel instrumentation scope that created the span          |
-| `span_origin.environment.type`     | string optional | Operating environment type where the span was captured: `ci`, `server`, or `local`            |
-| `span_origin.environment.name`     | string optional | Normalized operating environment name, such as `github_actions`, `vercel`, or `development` |
+| Field                                 | Type            | Description                                                                                             |
+|---------------------------------------|-----------------|---------------------------------------------------------------------------------------------------------|
+| `caller_functionname`                 | string optional | Function or method that created the span                                                                |
+| `caller_filename`                     | string optional | File where the span was created                                                                         |
+| `caller_lineno`                       | number optional | Line number where the span was created                                                                  |
+| `span_origin.name`                    | string optional | SDK, integration, Braintrust service, or exporter that emitted or exported the span                     |
+| `span_origin.version`                 | string optional | Version of the SDK, integration, Braintrust service, or exporter when known                             |
+| `span_origin.instrumentation.name`    | string optional | Stable module, package, plugin, or OTel instrumentation scope that created the span                     |
+| `span_origin.instrumentation.version` | string optional | Version of the module, package, plugin, or OTel instrumentation scope that created the span, when known |
+| `span_origin.environment.type`        | string optional | Operating environment type where the span was captured: `ci`, `server`, or `local`                      |
+| `span_origin.environment.name`        | string optional | Normalized operating environment name, such as `github_actions`, `vercel`, or `development`             |
 
 Braintrust-created spans MUST also include span-origin provenance. Omit fields whose values are unknown.
 
@@ -197,7 +200,8 @@ Braintrust-created spans MUST also include span-origin provenance. Omit fields w
     "name": "braintrust.sdk.javascript",
     "version": "1.2.3",
     "instrumentation": {
-      "name": "openai-auto"
+      "name": "openai-auto",
+      "version": "0.4.0"
     },
     "environment": {
       "type": "ci",
@@ -214,6 +218,8 @@ OTLP ingestion will map standard OTel code attributes into caller-location conte
 Braintrust-maintained SDKs, plugins, services, and exporters SHOULD use stable `span_origin.name` values under the reserved `braintrust.` prefix when they provide explicit Braintrust span-origin provenance. Braintrust SDKs SHOULD use `braintrust.sdk.<language>` names, such as `braintrust.sdk.javascript`; Braintrust plugins SHOULD use `braintrust.plugin.<plugin>` names, such as `braintrust.plugin.codex`; Braintrust Gateway SHOULD use `braintrust.gateway`. User code and third-party integrations SHOULD NOT use the `braintrust.` prefix for caller-provided origin names.
 
 `context.span_origin.instrumentation.name` identifies the stable module, package, plugin, or OTel instrumentation scope that directly created the span. Provider/client SDKs such as `openai` or `anthropic` are not the span origin and SHOULD continue to appear in `metadata.provider` when provider metadata is available.
+
+`context.span_origin.instrumentation.version` is an optional string identifying the version of that instrumentation. It is distinct from the top-level `context.span_origin.version`, which identifies the emitting SDK, integration, service, or exporter. Include the instrumentation version when known; otherwise omit it.
 
 `context.span_origin.environment` identifies the operating environment where the span was captured. The `type` field SHOULD be one of `ci`, `server`, or `local`; SDK type definitions SHOULD allow future string values. The `name` field is optional and SHOULD be a normalized lower-snake-case label. Explicit `type` and `name` values are independent; if only one is supplied, SDKs SHOULD preserve that field and omit the unknown field. Emit this object only when the value comes from an explicit override or a reliable positive signal; do not infer `local` from the absence of CI or server signals. Gateway identity belongs in `context.span_origin.name`, not in `context.span_origin.environment.type`.
 
@@ -1209,7 +1215,7 @@ Braintrust also consumes the standard OTel code attributes for caller location:
 
 SDKs and exporters SHOULD encode Braintrust span-origin provenance in `braintrust.context_json` as `context.span_origin`. Ingestion MUST use those explicit `context.span_origin` values when present. When explicit Braintrust span-origin provenance is not provided on an OTLP span, ingestion SHOULD set `context.span_origin.name` to `opentelemetry` and SHOULD derive `context.span_origin.version` from the OTel `telemetry.sdk.version` resource attribute when present.
 
-OTLP ingestion SHOULD derive `context.span_origin.instrumentation.name` from the OTLP instrumentation scope name.
+OTLP ingestion SHOULD derive `context.span_origin.instrumentation.name` from the OTLP instrumentation scope name and `context.span_origin.instrumentation.version` from the scope version when known, preserving explicitly supplied Braintrust provenance values.
 
 SDKs and exporters MUST NOT emit environment provenance as standalone `braintrust.environment.*` resource or span attributes. If environment provenance is known, encode it inside `braintrust.context_json` as `context.span_origin.environment`.
 
