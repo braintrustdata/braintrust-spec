@@ -88,3 +88,52 @@ Input and output for a call with three questions:
   }
 }
 ```
+
+# SDK support
+
+```yaml
+id: question-spans
+name: Question spans
+category: Tracing
+support:
+  question-span-type:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  input-output-shape:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  typed-answers:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  answer-metadata:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  rubric-scores:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+```

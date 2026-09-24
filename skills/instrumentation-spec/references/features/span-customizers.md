@@ -124,3 +124,52 @@ This is **fail-closed** behavior, unlike JavaScript. Customization runs on each 
 
 - [Java implementation under review](https://github.com/braintrustdata/braintrust-sdk-java/pull/177)
 - [JavaScript implementation under review](https://github.com/braintrustdata/braintrust-sdk-javascript/pull/2489)
+
+# SDK support
+
+```yaml
+id: span-customizers
+name: Span customizer hooks
+category: Tracing
+support:
+  export-hook:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  ordered-customizers:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  field-transforms:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  identity-preservation:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  hook-failure-handling:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+```

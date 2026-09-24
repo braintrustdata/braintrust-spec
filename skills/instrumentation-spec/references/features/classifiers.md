@@ -298,3 +298,20 @@ When a classifier fails, the result includes:
   }
 }
 ```
+
+# SDK support
+
+```yaml
+id: classifiers
+name: Classifiers
+category: Evals
+support:
+  classifier-spans:
+    dotnet: "yes"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
+    rust: "no"
+```

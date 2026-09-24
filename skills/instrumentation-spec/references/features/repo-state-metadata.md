@@ -47,3 +47,19 @@ usernames and passwords. SCP-like SSH remotes such as
 }
 ```
 
+# SDK support
+
+```yaml
+id: repo-state-metadata
+name: Repo state metadata
+category: Metadata
+support:
+  repo-state-metadata:
+    dotnet: "no"
+    go: "no"
+    java: "no"
+    js: "no"
+    python: "no"
+    ruby: "no"
+    rust: "no"
+```

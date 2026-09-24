@@ -173,3 +173,20 @@ SDK implementations **SHOULD** cover these scenarios in their own tests:
 | Provider failure                                  | Top-level `error` is populated and provider-native output is not logged.                                                   |
 | Partial batch failure                             | `count` matches the number returned and top-level `error` is populated.                                                    |
 | Attachment conversion failure                     | The original input is retained and the span is still exported.                                                             |
+
+# SDK support
+
+```yaml
+id: embeddings
+name: Embedding APIs
+category: LLM APIs
+support:
+  embedding-spans:
+    dotnet: "no"
+    go: "partial"
+    java: "partial"
+    js: "partial"
+    python: "partial"
+    ruby: "no"
+    rust: "no"
+```

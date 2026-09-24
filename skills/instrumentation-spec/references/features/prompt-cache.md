@@ -186,3 +186,45 @@ they are defined to be a subset of.
   }
 }
 ```
+
+# SDK support
+
+```yaml
+id: prompt-cache
+name: Prompt caching
+category: Token & cost
+providers: ["anthropic", "bedrock"]
+support:
+  cache-token-metrics:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
+    rust: "yes"
+  ttl-split:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "no"
+    rust: "no"
+  bedrock-cachepoint:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "no"
+    rust: "no"
+  beta-header-passthrough:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
+    rust: "no"
+```

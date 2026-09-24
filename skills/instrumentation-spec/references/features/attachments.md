@@ -299,3 +299,37 @@ Provide a config flag to disable attachment processing entirely (e.g. `BRAINTRUS
 ### Native SDK implementation
 
 Native SDKs should follow the canonical placement and provider mapping rules in [Multimodal / Attachments](../instrumentation-guide.md#multimodal--attachments). This document covers the shared conversion and upload mechanics.
+
+# SDK support
+
+```yaml
+id: attachments
+name: Attachments
+category: Multimodal
+providers: ["openai", "anthropic", "google", "bedrock"]
+support:
+  external-file-refs:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "no"
+    rust: "no"
+  inline-base64:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "no"
+    rust: "no"
+  attachment-upload:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "no"
+    rust: "no"
+```

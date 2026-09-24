@@ -157,3 +157,20 @@ Playground                    Dev Server                  Evaluator
     |  SSE: done                   |                           |
     |<-----------------------------|                           |
 ```
+
+# SDK support
+
+```yaml
+id: remote-eval-parameter-design
+name: Remote eval parameter design
+category: Evals
+support:
+  remote-eval-parameter-design:
+    dotnet: "no"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
+    rust: "no"
+```

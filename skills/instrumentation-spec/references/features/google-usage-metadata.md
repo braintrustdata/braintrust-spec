@@ -81,3 +81,21 @@ Related BTX specs:
 - GenerateContent: [thinking](../../../../test/llm_span/google/thinking.yaml), [grounding](../../../../test/llm_span/google/grounding.yaml), and [streaming](../../../../test/llm_span/google/streaming.yaml)
 - Interactions: [standard](../../../../test/llm_span/google/interactions.yaml) and [streaming](../../../../test/llm_span/google/interactions_streaming.yaml)
 - Modalities: [input audio](../../../../test/llm_span/google/attachments.yaml), [output audio](../../../../test/llm_span/google/generated_audio_usage.yaml), and [output image](../../../../test/llm_span/google/generated_image_usage.yaml)
+
+# SDK support
+
+```yaml
+id: google-usage-metadata
+name: Google Gemini usage metadata
+category: Token & cost
+providers: ["google"]
+support:
+  google-usage-metadata:
+    dotnet: "no"
+    go: "yes"
+    java: "partial"
+    js: "yes"
+    python: "yes"
+    ruby: "no"
+    rust: "no"
+```

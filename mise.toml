@@ -1,0 +1,19 @@
+[tools]
+python = "3.13.3"
+
+[env]
+_.python.venv = { path = ".venv", create = true, uv_create_args = ["--seed"] }
+
+[tasks.install-deps]
+description = "Install pinned Python dependencies in the project virtualenv"
+run = "python -m pip install -r requirements.txt"
+
+[tasks.test]
+description = "Run unit tests and validate compatibility data"
+depends = ["install-deps"]
+run = "./scripts/test.sh"
+
+[tasks.compatibility-csv]
+description = "Regenerate the compatibility CSV"
+depends = ["install-deps"]
+run = "python scripts/compatibility_csv.py"
