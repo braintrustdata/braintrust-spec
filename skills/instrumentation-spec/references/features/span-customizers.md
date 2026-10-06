@@ -37,7 +37,7 @@ The exact datatype passed to and returned from the hook is an SDK design decisio
 
 The instrumentation guide's capture rules describe the data produced by instrumentation by default. Explicit user customizers MAY transform that data; integrations MUST NOT use customizers to bypass their default capture requirements.
 
-Automatic attachment uploads MUST run after export customization, using only the customized data. Removing or redacting inline image, audio, or other attachment data in a hook MUST prevent its automatic upload. Integrations MAY convert inline media into SDK attachment objects when data is captured, before hooks run; hooks then receive those objects, and removing or replacing one MUST prevent its upload. Customizers that serialize or walk record values MUST tolerate attachment objects. If customization rejects an entire batch, no attachments from that batch may be uploaded, including attachments in spans whose hooks succeeded before the failure.
+Automatic attachment uploads MUST run after export customization, using only the customized data. Removing or redacting inline image, audio, or other attachment data in a hook MUST prevent its automatic upload. Integrations MAY convert inline media into SDK attachment objects when data is captured, before hooks run; hooks then receive those objects, and removing or replacing one MUST prevent its upload. Customizers that serialize or walk record values MUST tolerate attachment objects. If a hook fails, no attachments from the affected record may be uploaded; attachments in unrelated records continue through normal processing.
 
 ### Record lifecycle
 
@@ -47,11 +47,18 @@ Removing a field removes it from the current outgoing record. It does not retrac
 
 ### Hook failures
 
-Export customization is **fail closed**. If a hook throws or returns an invalid value, the SDK MUST log an error, stop running subsequent customizers for the affected record, and prevent that record from being uploaded. It MUST NOT fall back to the original data or export partial mutations made before the failure. Error diagnostics MUST NOT include span payloads or exception messages or stacks, which may contain sensitive data.
+Export customization is **fail closed for span content**, without dropping the span. If a hook throws or returns an invalid value, the SDK MUST stop running subsequent customizers for the affected record and export a stripped record:
+
+- Retain only the span ID, trace ID, parent ID, and duration, using their original values from before customization. SDK-specific identity fields needed to identify the same span record are included in this requirement. Duration may be represented by the timestamps required by the SDK's export format; an incremental record without a duration MUST NOT invent one.
+- Remove all other span data, including the span name, input, output, metadata, context, attributes, events, links, errors, tags, attachments, and metrics other than duration. Required transport routing fields are protocol information, not span content.
+- Do not fall back to the original payload or retain partial mutations from any customizer that ran before the failure.
+- After stripping, the SDK MUST set `context.customizer_error` to the boolean `true` to identify that the record was stripped because a client customizer failed. This SDK-generated context marker is the only span content allowed beyond the retained identity and duration fields: native span records use `context: {"customizer_error": true}`, and OTel spans use the `braintrust.context_json` string attribute containing `{"customizer_error":true}`. It MUST replace, not merge with, any original or customizer-provided context. The SDK MUST add it to every stripped record, even when error logging is disabled or its once-only limit has already been reached. This diagnostic belongs in context, not in user-facing tags.
+
+SDKs SHOULD log an error when a hook fails. If they do, they MUST log no more than one hook-failure error per process (per global environment in JavaScript), across all customizers, spans, batches, and retries. Error diagnostics MUST NOT include span payloads or exception messages or stacks, which may contain sensitive data.
 
 There are no configurable error-handling policies. Customizer authors who want to recover from an error MUST handle it inside their hook and return a valid record.
 
-For incremental exporters, failure drops the current outgoing record; it cannot retract records already uploaded. Subsequent records for the same logical span are evaluated independently. Incremental exporters MUST continue exporting unrelated records and MUST memoize dropped records so transport retries do not rerun failed hooks or log the same failure again. Exporters that operate on completed-span batches MAY reject the entire batch instead, as documented below for Java and Go.
+For incremental exporters, stripping applies to the current outgoing record; it cannot retract records already uploaded. Subsequent records for the same logical span are evaluated independently. Incremental exporters MUST memoize stripped records so transport retries do not rerun failed hooks. All exporters MUST continue exporting unrelated records; a hook failure MUST NOT reject an entire batch.
 
 ## JavaScript
 
@@ -99,9 +106,9 @@ initLogger({ projectName: "my-project" });
 
 ### Hook failures
 
-Thrown exceptions and invalid return values drop the current outgoing record and stop the remaining customizers for that record. The SDK logs an error without the exception message, stack, or span payload. Unrelated records continue through export; retries reuse the dropped result without rerunning its hooks.
+Thrown exceptions and invalid return values strip the current outgoing record and stop the remaining customizers for that record, following the shared hook-failure contract. Error logging is recommended and limited to once per global environment. Unrelated records continue through export; retries reuse the stripped result without rerunning its hooks.
 
-Hooks must return a valid plain object, not a promise, `undefined`, `null`, or another invalid value. Accidental promises are rejected as hook results; rejected promises are consumed to avoid unhandled rejections. Customizer authors must catch errors inside their hook if they want to recover and still export the record.
+Hooks must return a valid plain object, not a promise, `undefined`, `null`, or another invalid value. Accidental promises are rejected as hook results; rejected promises are consumed to avoid unhandled rejections. Customizer authors must catch errors inside their hook if they want to recover without stripping the record.
 
 ## Python
 
@@ -123,7 +130,7 @@ Export behavior matches JavaScript: hooks apply to all native SDK spans and thei
 
 ### Hook failures
 
-Failures are handled as in JavaScript. Hooks must return a `dict`; subclasses are accepted and copied into a plain `dict`. Any exception raised by a hook drops the record, except `KeyboardInterrupt` and `SystemExit`, which propagate.
+Failures are handled as in JavaScript, with error logging recommended and limited to once per process. Hooks must return a `dict`; subclasses are accepted and copied into a plain `dict`. Any exception raised by a hook strips the record, except `KeyboardInterrupt` and `SystemExit`, which propagate.
 
 ## Go
 
@@ -146,7 +153,7 @@ Register customizers through the `SpanCustomizers` configuration field. Use keye
 
 ### Hook failures
 
-A returned error, a panic, a `nil` result, or changed IDs fail the entire export batch, as in Java. No spans or attachments from that batch are sent. Diagnostics identify the customizer and the kind of failure, but not the hook's error text.
+A returned error, a panic, a `nil` result, or changed IDs strip the affected span and stop its remaining customizers, following the shared hook-failure contract. The stripped span and unrelated spans continue through export; a hook failure does not fail the batch. No attachments from the stripped span are uploaded. Error logging is recommended and limited to once per process. Diagnostics may identify the customizer and the kind of failure, but MUST NOT include the hook's error text.
 
 ## Java
 
@@ -176,9 +183,9 @@ The hook returns the original `SpanData` or a replacement, typically an OpenTele
 
 ### Hook failures
 
-A thrown exception, a `null` result, or a changed protected ID fails the entire export batch. The exporter logs the failure, returns a failed export result, and sends none of that batch. It does not fall back to exporting the original spans.
+A thrown exception, a `null` result, or a changed protected ID strips the affected span and stops its remaining customizers, following the shared hook-failure contract. The stripped span and unrelated spans continue through export; a hook failure alone MUST NOT cause a failed export result or rejection of the batch. No attachments from the stripped span are uploaded. Error logging is recommended and limited to once per process.
 
-This is **fail-closed** behavior at batch granularity. Customization runs on each call to the Braintrust exporter's `export` method; submitting a batch again invokes the hooks again.
+Customization runs on each call to the Braintrust exporter's `export` method; submitting a batch again invokes the hooks again, but MUST NOT produce additional hook-failure error logs.
 
 ## References
 
@@ -242,10 +249,10 @@ support:
     rust: "unknown"
   hook-failure-handling:
     dotnet: "unknown"
-    go: "yes"
+    go: "unknown"
     java: "unknown"
-    js: "yes"
-    python: "yes"
+    js: "unknown"
+    python: "unknown"
     ruby: "unknown"
     rust: "unknown"
 ```
