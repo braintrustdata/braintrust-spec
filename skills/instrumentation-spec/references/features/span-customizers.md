@@ -191,6 +191,9 @@ Customization runs on each call to the Braintrust exporter's `export` method; su
 
 - [Java implementation under review](https://github.com/braintrustdata/braintrust-sdk-java/pull/177)
 - [JavaScript implementation under review](https://github.com/braintrustdata/braintrust-sdk-javascript/pull/2489)
+- [Python hook-failure handling under review](https://github.com/braintrustdata/braintrust-sdk-python/pull/915)
+- [JavaScript hook-failure handling under review](https://github.com/braintrustdata/braintrust-sdk-javascript/pull/2614)
+- [Go hook-failure handling under review](https://github.com/braintrustdata/braintrust-sdk-go/pull/268)
 
 # SDK support
 
@@ -249,10 +252,10 @@ support:
     rust: "unknown"
   hook-failure-handling:
     dotnet: "unknown"
-    go: "unknown"
+    go: "yes"
     java: "unknown"
-    js: "unknown"
-    python: "unknown"
+    js: "yes"
+    python: "yes"
     ruby: "unknown"
     rust: "unknown"
 ```
