@@ -147,10 +147,10 @@ Braintrust supports the following `span_attributes.type` values:
 | `preprocessor` | A data preprocessing step                                                     |
 | `classifier`   | A classification operation                                                    |
 | `review`       | A human review/annotation                                                     |
-| `question`     | A model call that answers typed questions about supplied state                |
+| `decision`     | A model call that answers typed questions about supplied state                |
 
 This guide primarily concerns `llm`, `tool`, and `task` spans. Eval-specific trace shape and attributes are specified in [Eval spans](features/eval-spans.md).
-Typed question calls use the input and output contract in [Question spans](features/question-spans.md).
+Typed question calls MUST emit `decision` spans using the input and output contract in [Decision spans](features/decision-spans.md).
 
 ### Span hierarchy
 
