@@ -97,7 +97,6 @@ id: question-spans
 name: Decision spans
 category: Tracing
 support:
-  # Stable capability ID; now requires emitting the decision span type.
   question-span-type:
     dotnet: "unknown"
     go: "unknown"
