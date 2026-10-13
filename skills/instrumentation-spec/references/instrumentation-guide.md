@@ -150,7 +150,7 @@ Braintrust supports the following `span_attributes.type` values:
 | `decision`     | A model call that answers typed questions about supplied state                |
 
 This guide primarily concerns `llm`, `tool`, and `task` spans. Eval-specific trace shape and attributes are specified in [Eval spans](features/eval-spans.md).
-Typed question calls MUST emit `decision` spans using the input and output contract in [Decision spans](features/question-spans.md).
+Typed question calls MUST emit `decision` spans using the input and output contract in [Decision spans](features/decision-spans.md).
 
 ### Span hierarchy
 
