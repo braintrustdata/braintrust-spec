@@ -25,7 +25,7 @@ This replacement process is done by the Braintrust backend. Some SDKs do this as
 
 ### Scanning
 
-The SDK scans the `braintrust.input_json` and `braintrust.output_json` span attributes for base64 attachment data. These attributes contain JSON-serialized LLM conversation messages.
+The SDK scans the `braintrust.input_json` and `braintrust.output_json` span attributes for base64 attachment data. These attributes contain JSON-serialized inputs and outputs, including LLM conversation messages and structured [decision payloads](decision-spans.md#attachments). Scanning MUST cover decision spans as well as LLM spans, including media in nested state, instructions, and criteria. Native Braintrust logging APIs apply the same rules to the corresponding `input` and `output` values.
 
 Each LLM vendor encodes attachments differently (data URIs, raw base64 in named fields, etc.). The scanning and replacement logic must support multiple vendor formats and be easy to extend when new formats are added.
 
