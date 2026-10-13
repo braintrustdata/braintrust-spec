@@ -34,6 +34,58 @@ Question answers remain in `output.answers` and do not automatically populate to
 The guide's usual timing, error, provenance, and data-capture rules apply.
 Record model/provider in `metadata` and reported token usage in the standard token metrics.
 
+## Attachments
+
+Decision spans MUST follow the shared [attachment contract](../instrumentation-guide.md#multimodal--attachments).
+Attachment processing MUST recursively cover media in the decision payload, including nested `input.state`, question `instructions`, and `criteria` values.
+Replace inline media with `braintrust_attachment` references at the original media locations, preserving surrounding objects, text, and array order.
+Do not add a separate attachment list or move media into `metadata`.
+The `{ "state": ..., "questions": [...] }` input and `{ "answers": [...] }` output shapes remain unchanged.
+
+Preserve existing `braintrust_attachment`, `external_attachment`, and `inline_attachment` references.
+Preserve remote URLs without fetching them solely to create attachments.
+Conversion applies only to the logged payload and MUST NOT change the model request.
+
+Use the shared [scanning, upload, retry, and fallback rules](attachments.md), including [all-or-nothing per-span fallback](attachments.md#partial-replacement-safety).
+If media cannot be decoded or its MIME type cannot be determined, leave the value unchanged.
+Conversion or upload failures MUST NOT prevent span export and MUST preserve the original payload according to the shared fallback contract.
+Automatic uploads MUST run after [span customizers](span-customizers.md), so removing or redacting media prevents its upload.
+
+### Example
+
+The following excerpt shows the logged state before and after attachment conversion; `input.questions` and `output.answers` follow the existing typed-question contract.
+The state fields are illustrative; attachment handling does not require a particular state schema.
+The data URL's bytes are abbreviated for readability.
+
+```diff
+ {
+   "input": {
+     "state": {
+       "description": "Inspect this product for damage.",
+-      "photo": "data:image/png;base64,<base64>"
++      "photo": {
++        "type": "braintrust_attachment",
++        "content_type": "image/png",
++        "filename": "attachment.png",
++        "key": "550e8400-e29b-41d4-a716-446655440000"
++      }
+     }
+   }
+ }
+```
+
+### Conformance scenarios
+
+| Scenario | Expected behavior |
+| -------- | ----------------- |
+| Mixed text and multiple inline images | Each media leaf becomes an attachment reference; text, array order, and question/answer associations are preserved. |
+| Nested media in state, instructions, or criteria | Media is converted recursively without flattening surrounding objects or arrays. |
+| Existing attachment references and remote URLs | References and URLs are preserved without re-uploading attachments or fetching remote media. |
+| Invalid media or unknown MIME type | The original value is retained. |
+| Attachment conversion, enqueue, or upload failure | The shared fallback contract preserves the original payload and span export continues; an enqueue failure aborts the per-span rewrite. |
+| Media removed or redacted by a customizer | Removed media is not automatically uploaded. |
+| Text-only decision | The existing input/output shape is retained without attachment fields. |
+
 ## Examples
 
 Input and output for a call with three questions:
@@ -106,6 +158,14 @@ support:
     ruby: "unknown"
     rust: "unknown"
   input-output-shape:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  multimodal-input:
     dotnet: "unknown"
     go: "unknown"
     java: "unknown"
