@@ -1,7 +1,8 @@
-# Question spans
+# Decision spans
 
-A `question` span represents one model call that answers typed questions about supplied state.
-Instrumentation MUST use the `question` span type and record the call's questions and answers together on that span.
+A `decision` span represents one model call that answers typed questions about supplied state.
+Instrumentation MUST emit `span_attributes.type: "decision"` and record the call's questions and answers together on that span.
+These spans were previously called `question` spans; that type remains supported for compatibility with existing traces, but new instrumentation MUST emit `decision`.
 
 ## Input and output
 
@@ -93,9 +94,10 @@ Input and output for a call with three questions:
 
 ```yaml
 id: question-spans
-name: Question spans
+name: Decision spans
 category: Tracing
 support:
+  # Stable capability ID; now requires emitting the decision span type.
   question-span-type:
     dotnet: "unknown"
     go: "unknown"
