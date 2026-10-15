@@ -9,6 +9,10 @@ Attachment discovery, upload, retry, and fallback behavior is defined in
 [Attachments](attachments.md). Embedding APIs have an additional contract in
 [Embedding APIs](embeddings.md).
 
+Decision APIs that locate objects in images use the
+[decision span box contract](decision-spans.md#image-boxes), including when a
+call mixes boxes with other question types.
+
 ## Span model
 
 Auto-instrumentation is subject to the guide's
