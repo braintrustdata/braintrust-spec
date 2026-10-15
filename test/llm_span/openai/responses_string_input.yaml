@@ -1,0 +1,36 @@
+name: responses_string_input
+type: llm_span_test
+provider: openai
+endpoint: /v1/responses
+requests:
+  - model: gpt-4o-mini
+    instructions: Reply with one word.
+    input: What is the capital of France?
+expected_brainstore_spans:
+  - metrics:
+      tokens: !fn is_non_negative_number
+      prompt_tokens: !fn is_non_negative_number
+      completion_tokens: !fn is_non_negative_number
+    metadata:
+      model: !starts_with "gpt-4o-mini"
+      provider: openai
+    span_attributes:
+      type: llm
+    context:
+      span_origin:
+        name: !fn is_non_empty_string
+        version: !fn is_non_empty_string
+        instrumentation:
+          name: !fn is_non_empty_string
+    input:
+      - role: system
+        content: Reply with one word.
+      - role: user
+        content: What is the capital of France?
+    output:
+      - type: message
+        role: assistant
+        status: completed
+        content:
+          - type: output_text
+            text: !fn is_non_empty_string
