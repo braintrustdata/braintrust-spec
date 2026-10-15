@@ -350,14 +350,6 @@ support:
     python: "unknown"
     ruby: "unknown"
     rust: "unknown"
-  box-image-association:
-    dotnet: "unknown"
-    go: "unknown"
-    java: "unknown"
-    js: "unknown"
-    python: "unknown"
-    ruby: "unknown"
-    rust: "unknown"
   answer-metadata:
     dotnet: "unknown"
     go: "unknown"
