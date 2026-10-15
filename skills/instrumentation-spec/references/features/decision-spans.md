@@ -21,7 +21,7 @@ Each answer contains `id`, `type`, and the corresponding result fields below.
 | `boolean` | Optional object mapping labels such as `true` / `false` to JSON values | `probability`: number in [0, 1] | —                                       |
 | `choice`  | Object mapping choice keys to JSON values                              | `choice`: string                | `probabilities`, `confidence`           |
 | `score`   | Ordered array of at least two JSON values describing score levels      | `score`: finite number          | `legend`, `probabilities`, `confidence` |
-| `box`     | Not accepted                                                          | `box`: object with four edges   | `confidence`: number in [0, 1] or `null` |
+| `box`     | Not accepted                                                          | `box`: object with four edges   | `confidence`: number in [0, 1] or `null`, `image_path`: string |
 
 `probabilities` maps choice keys or score-level keys to numbers in [0, 1]; numeric `confidence` is also a number in [0, 1].
 `legend` maps score-level keys to JSON values.
@@ -45,6 +45,7 @@ Its answer has the same `id`, `type: "box"`, and a `box` object:
 type BoxAnswer = {
   id: string;
   type: "box";
+  image_path?: string;
   box: {
     top: number;
     bottom: number;
@@ -60,7 +61,7 @@ The edges are finite numbers in [0, 1], measured from the image's top-left corne
 A valid box has `top < bottom` and `left < right`.
 
 Adapters MUST normalize provider coordinates to this representation when the provider uses different units or a different coordinate layout.
-Conversion MUST use known provider semantics and image dimensions already available to instrumentation; do not guess dimensions or fetch images solely for conversion.
+Conversion MUST use known provider semantics and dimensions of the associated image already available to instrumentation; do not guess dimensions, use another input image's dimensions, or fetch images solely for conversion.
 Preserve numeric precision without rounding or clamping.
 Coordinates already in the canonical representation MUST remain unchanged.
 Instrumentation MUST preserve numeric confidence, including zero, and explicit `null`; absent confidence stays absent.
@@ -83,9 +84,31 @@ An unexpected provider value MUST NOT cause instrumentation to throw into applic
 Preserve JSON-representable returned values for diagnosis and follow the guide's normal error handling when the provider itself rejects the call.
 If coordinates cannot be normalized because their semantics or required dimensions are unavailable, preserve the original JSON-representable answer for diagnosis rather than inventing a canonical box.
 
+### Identifying the image
+
+`image_path` identifies the input image that a box describes.
+It is a [JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901) in string form, rooted at the span's `input` object, not at the whole span or `input.state`.
+For example, `/state/photos/1` identifies the second image in `input.state.photos`, and `/questions/0/instructions/image` identifies an image supplied in the first question's structured instructions.
+Escape `~` as `~0` and `/` as `~1` in object keys; array indices are zero-based.
+The path MUST identify the image value or attachment reference itself, not a containing collection, attachment key, or URL inside an attachment reference.
+
+Adapters MUST populate `image_path` when the provider's structured request or response identifies the target image, translating provider image IDs or indices using the actual request mapping.
+This also applies when the image is selected on the question rather than returned with the answer.
+The field is optional for compatibility with providers that do not expose that association; it MAY also be populated when the call contains exactly one input image.
+With multiple input images, an answer without a resolvable `image_path` has an unknown image association.
+Consumers MUST NOT assume the first image, pair images and answers by array position, or infer the association from instruction text.
+Retain such answers for inspection, but do not render them on an arbitrarily chosen image.
+Several answers MAY reference the same image, and repeated occurrences of the same image are distinguished by their input paths.
+
+The path refers to the final logged input, including attachment conversion or fallback to the original media.
+When attachment conversion changes the media's location, adapters MUST update the path to the replacement location; in-place replacement leaves the path unchanged.
+A customizer that moves images MUST update affected paths, and one that removes images MUST remove their paths; instrumentation MUST NOT restore redacted media to resolve a reference.
+An invalid or unresolved provider reference MUST NOT fail the application call or discard the box; preserve JSON-representable returned values for diagnosis without guessing a replacement association.
+
 ### Example
 
-This is the logged payload after attachment conversion for an image in the supplied state.
+This is the logged payload after attachment conversion for two images in the supplied state.
+The provider's structured image selection maps each box to its input image through `image_path`.
 The answer order deliberately differs from the question order.
 
 ```json
@@ -94,31 +117,52 @@ The answer order deliberately differs from the question order.
   "metadata": { "provider": "example-provider", "model": "example-model" },
   "input": {
     "state": {
-      "photo": {
-        "type": "braintrust_attachment",
-        "content_type": "image/png",
-        "filename": "attachment.png",
-        "key": "550e8400-e29b-41d4-a716-446655440000"
-      }
+      "photos": [
+        {
+          "type": "braintrust_attachment",
+          "content_type": "image/png",
+          "filename": "attachment.png",
+          "key": "550e8400-e29b-41d4-a716-446655440000"
+        },
+        {
+          "type": "braintrust_attachment",
+          "content_type": "image/png",
+          "filename": "attachment.png",
+          "key": "550e8400-e29b-41d4-a716-446655440001"
+        }
+      ]
     },
     "questions": [
       {
         "id": "label_present",
         "type": "noul",
-        "instructions": "Is there a shipping label in `photo`?"
+        "instructions": "Is there a shipping label in the first photo?"
       },
       {
         "id": "label_bounds",
         "type": "box",
-        "instructions": "The shipping label in `photo`"
+        "instructions": "The shipping label in the first photo"
+      },
+      {
+        "id": "damage_bounds",
+        "type": "box",
+        "instructions": "The damaged corner in the second photo"
       }
     ]
   },
   "output": {
     "answers": [
       {
+        "id": "damage_bounds",
+        "type": "box",
+        "image_path": "/state/photos/1",
+        "box": { "top": 0.7, "bottom": 0.95, "left": 0.02, "right": 0.2 },
+        "confidence": 0.91
+      },
+      {
         "id": "label_bounds",
         "type": "box",
+        "image_path": "/state/photos/0",
         "box": { "top": 0.12, "bottom": 0.48, "left": 0.31, "right": 0.76 },
         "confidence": 0.87
       },
@@ -134,7 +178,14 @@ The answer order deliberately differs from the question order.
 | -------- | ----------------- |
 | A box question and answer | Preserve `type: "box"`, the question's instructions, all four edges, and the shared ID; do not add `criteria`. |
 | Box mixed with Noul, Boolean, Choice, or Score | One decision span contains every question and answer; existing answer types retain their shapes. |
-| Multiple boxes and images, reordered answers | Each answer stays paired with its question by ID; preserve image locations and instructions without guessing an image-to-box mapping. |
+| Multiple boxes and images, reordered answers | Match questions by ID and images by `image_path`; answer order does not change either association. |
+| Provider identifies an image by ID or index, including on the question | Map the structured selection to the image's path in the logged input. |
+| Images nested in state or question instructions, including keys containing `/` or `~` | Use an input-rooted JSON Pointer with escaped keys and zero-based array indices. |
+| Multiple images without a structured image selection | Retain the answer without inventing `image_path`; consumers leave its image association unknown. |
+| Several boxes reference one image, or the same image appears twice | Preserve each answer's explicit path; do not deduplicate input locations or pair by answer order. |
+| Attachment replacement changes a media path, or falls back to the original input | Point to the image in the final logged input in either case. |
+| A customizer moves or removes an image | Update or remove affected paths without restoring redacted media. |
+| Provider image reference is invalid or unresolved | Preserve returned values for diagnosis; do not guess a replacement image or fail the application call. |
 | Coordinates at 0 or 1, or with fractional precision | Preserve exact numeric values without rounding or pixel conversion. |
 | Provider returns pixel coordinates or an origin/width/height layout | Normalize to fractional edges using known semantics and available dimensions; leave the application-visible result unchanged. |
 | Coordinate semantics or required dimensions are unavailable | Preserve the original answer for diagnosis without guessing a canonical box or fetching an image. |
@@ -292,6 +343,14 @@ support:
     ruby: "unknown"
     rust: "unknown"
   box-answers:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  box-image-association:
     dotnet: "unknown"
     go: "unknown"
     java: "unknown"
