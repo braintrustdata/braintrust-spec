@@ -230,7 +230,7 @@ support:
     go: "no"
     java: "no"
     js: "yes"
-    python: "no"
+    python: "partial"
     ruby: "no"
     rust: "no"
 ```

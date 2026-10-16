@@ -230,11 +230,11 @@ name: Dataset versioning
 category: Datasets
 support:
   dataset-versioning:
-    dotnet: "no"
+    dotnet: "partial"
     go: "no"
-    java: "no"
+    java: "partial"
     js: "yes"
-    python: "no"
-    ruby: "no"
+    python: "partial"
+    ruby: "partial"
     rust: "no"
 ```

@@ -341,6 +341,6 @@ support:
     java: "yes"
     js: "yes"
     python: "yes"
-    ruby: "no"
+    ruby: "partial"
     rust: "yes"
 ```
