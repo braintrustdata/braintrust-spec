@@ -160,6 +160,10 @@ Spans form a tree (technically a DAG) within a trace:
 - A span's parent is identified by `span_parents` (an array, typically with one element)
 - Root spans have an empty `span_parents` array
 
+SDKs and instrumentation MAY adopt `metadata.turn_span_id` for per-turn token
+and cost aggregation without walking the span tree. See
+[Turn-scoped correlation IDs](features/turn-scoped-correlation-ids.md).
+
 ### Metrics
 
 The `metrics` field is an object of string keys to numeric values. Instrumentation MUST only emit metric fields explicitly listed in this guide even though the backend accepts arbitrary numeric keys. Standard LLM token and cost field semantics are specified in [Token and cost metrics](features/token-and-cost-metrics.md). Standard fields:
