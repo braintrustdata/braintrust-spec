@@ -187,11 +187,6 @@ A thrown exception, a `null` result, or a changed protected ID strips the affect
 
 Customization runs on each call to the Braintrust exporter's `export` method; submitting a batch again invokes the hooks again, but MUST NOT produce additional hook-failure error logs.
 
-## References
-
-- [Java implementation under review](https://github.com/braintrustdata/braintrust-sdk-java/pull/177)
-- [JavaScript implementation under review](https://github.com/braintrustdata/braintrust-sdk-javascript/pull/2489)
-
 # SDK support
 
 ```yaml
@@ -249,10 +244,10 @@ support:
     rust: "unknown"
   hook-failure-handling:
     dotnet: "unknown"
-    go: "unknown"
-    java: "unknown"
-    js: "unknown"
-    python: "unknown"
-    ruby: "unknown"
+    go: "yes"
+    java: "yes"
+    js: "yes"
+    python: "yes"
+    ruby: "yes"
     rust: "unknown"
 ```
