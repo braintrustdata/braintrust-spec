@@ -211,12 +211,26 @@ provider=google, endpoint=/v1/interactions       → executeInteractions(request
 
 Raise `NotImplementedError` for combinations you haven't implemented yet.
 
+### Responses API input normalization
+
+Direct provider SDK runners must preserve the request's `instructions` and the original shape of `input` when calling the SDK. In particular, a scalar string input must reach the Responses API as a string, not as a runner-generated user message. Otherwise the runner masks bugs in the instrumentation's string-input handling.
+
+The instrumentation, not the runner, normalizes the logged span input:
+
+- Prepend `instructions` as a `{role: system, content: <instructions>}` message.
+- Convert a string `input` into a `{role: user, content: <input>}` message after the system message.
+- For an array `input`, preserve the original items, their order, and their content after the system message, including typed `input_text` content parts.
+
+The single-request specs [`openai/responses_string_input`](llm_span/openai/responses_string_input.yaml) and [`openai/responses_array_input`](llm_span/openai/responses_array_input.yaml) assert both the system instructions and user content. Each starts with empty conversation history; do not share history between spec files. The array case uses `input: [{role: user, content: [{type: input_text, text: "What is the capital of France?"}]}]`.
+
+Framework adapters whose public API only accepts chat messages may also execute these cases as semantic coverage, using request-local system instructions and user messages. That does not replace direct provider coverage of the wire shapes. When asserting a scalar text value, a runner may compare an equivalent `input_text` content-part list by its text; an expected content-part list must still be compared structurally. Do not weaken the direct provider fixtures to accommodate framework serialization.
+
 ### Multi-turn requests
 
 Some specs have more than one entry in `requests` (e.g. `reasoning.yaml` has two turns).  Each turn's response must be appended to the conversation history and prepended to the next request's input, so the model has full context.
 
 - **Chat completions**: accumulate `messages` list; prepend to next turn's `messages`.
-- **Responses API**: accumulate `input` items; prepend to next turn's `input`.
+- **Responses API**: accumulate `input` items; prepend them to the next turn's `input` only when prior history exists. If a later turn uses a string, represent it as a user message when combining it with prior items; without prior history, preserve the original string.
 - **Anthropic messages**: accumulate `messages` list; prepend to next turn's `messages`.
 
 ### Streaming
