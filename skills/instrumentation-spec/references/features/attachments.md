@@ -314,7 +314,7 @@ support:
     java: "yes"
     js: "yes"
     python: "yes"
-    ruby: "no"
+    ruby: "yes"
     rust: "no"
   inline-base64:
     dotnet: "no"
@@ -322,7 +322,7 @@ support:
     java: "yes"
     js: "yes"
     python: "yes"
-    ruby: "no"
+    ruby: "partial"
     rust: "no"
   attachment-upload:
     dotnet: "no"
