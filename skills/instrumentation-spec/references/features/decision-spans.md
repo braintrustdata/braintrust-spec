@@ -3,6 +3,7 @@
 A `decision` span represents one model call that answers typed questions about supplied state.
 Instrumentation MUST emit `span_attributes.type: "decision"` and record the call's questions and answers together on that span.
 These spans were previously called `question` spans; that type remains supported for compatibility with existing traces, but new instrumentation MUST emit `decision`.
+Calls that extract, compute, estimate, or forecast values from typed field definitions use [Extraction spans](extraction-spans.md).
 
 ## Input and output
 
