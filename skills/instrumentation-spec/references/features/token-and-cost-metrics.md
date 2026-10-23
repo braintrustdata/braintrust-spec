@@ -43,6 +43,12 @@ Embedding spans have no generated-token component. They emit
 `completion_tokens` rather than fabricate zero. See
 [Embeddings](embeddings.md#metrics).
 
+Extraction spans reuse the canonical token and cost fields with their own
+`extraction` span type. Preserve reported output-token counts, including zero;
+do not count serialized result JSON as generated tokens. See
+[Extraction spans](extraction-spans.md#metrics) for input-only usage and
+aggregate token accounting.
+
 For multimodal output, a content-bearing event contains generated text or media
 data. Empty deltas, handshake messages, acknowledgements, usage-only events,
 and other control events do not satisfy `time_to_first_token`.

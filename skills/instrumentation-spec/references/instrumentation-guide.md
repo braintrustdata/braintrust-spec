@@ -148,9 +148,11 @@ Braintrust supports the following `span_attributes.type` values:
 | `classifier`   | A classification operation                                                    |
 | `review`       | A human review/annotation                                                     |
 | `decision`     | A model call that answers typed questions about supplied state                |
+| `extraction`   | A model call that extracts, computes, estimates, or forecasts typed values    |
 
 This guide primarily concerns `llm`, `tool`, and `task` spans. Eval-specific trace shape and attributes are specified in [Eval spans](features/eval-spans.md).
 Typed question calls MUST emit `decision` spans using the input and output contract in [Decision spans](features/decision-spans.md).
+Typed extraction calls MUST emit `extraction` spans using [Extraction spans](features/extraction-spans.md).
 
 ### Span hierarchy
 
@@ -346,7 +348,7 @@ Each discrete API call MUST produce exactly one `llm` span. A streaming call pro
 
 ### Canonical payload format
 
-Braintrust uses the **OpenAI Chat Completions message format** as the canonical representation for LLM input and output. The Braintrust UI parses, displays, and diffs spans assuming this format.
+Braintrust uses the **OpenAI Chat Completions message format** as the canonical representation for completion API input and output. The Braintrust UI parses, displays, and diffs completion spans assuming this format. Dedicated extraction APIs use the structured contract in [Extraction spans](features/extraction-spans.md).
 
 For the three providers that Braintrust ships built-in UI normalizers for (OpenAI, Anthropic, Google), instrumentation MAY preserve the provider-native payload as-is — the UI will normalize it for display based on `metadata.provider`. For all other providers (Mistral, Cohere, Groq, Fireworks, Together, xAI, Perplexity, custom providers, etc.), instrumentation MUST convert payloads into the OpenAI Chat Completions format so that the UI can render them.
 
@@ -965,6 +967,8 @@ When an instrumented request or response contains inline binary media (images, P
 Dedicated image, audio, OCR, video, and prediction endpoints follow
 [Multimodal API surfaces](features/multimodal-api-surfaces.md). Embedding APIs
 follow [Embedding APIs](features/embeddings.md).
+Typed extraction APIs, including extraction from images, follow
+[Extraction spans](features/extraction-spans.md).
 
 Attachment conversion is both a storage optimization and a display requirement. When conversion succeeds, raw media bytes MUST NOT remain inline in `input` or `output`. If conversion or upload fails, instrumentation MUST preserve the original payload and MUST NOT throw an exception that prevents span export.
 
@@ -1184,6 +1188,10 @@ SDKs MUST NOT add metrics beyond the keys listed in this guide. Add new metric k
 Embedding spans are the exception to the generative token requirements above:
 they emit `prompt_tokens` and `tokens` only when reported and MUST omit
 `completion_tokens`. See [Embedding APIs](features/embeddings.md#metrics).
+
+Extraction spans use the same canonical token and cost fields, with the
+usage rules in [Extraction spans](features/extraction-spans.md#metrics).
+Preserve explicitly reported zero output tokens, but do not synthesize them when absent.
 
 ---
 

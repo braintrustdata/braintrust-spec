@@ -12,6 +12,8 @@ Attachment discovery, upload, retry, and fallback behavior is defined in
 Decision APIs that locate objects in images use the
 [decision span box contract](decision-spans.md#image-boxes), including when a
 call mixes boxes with other question types.
+Typed extraction APIs use [Extraction spans](extraction-spans.md),
+including when their inputs contain images.
 
 ## Span model
 
