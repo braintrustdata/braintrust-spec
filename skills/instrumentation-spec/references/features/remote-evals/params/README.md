@@ -9,23 +9,23 @@ This makes it easy to compare how a system behaves under different configuration
 ## How It Works
 
 ```
- Braintrust Playground                     Developer's Machine
-+----------------------+                 +-------------------------+
-|                      |                 |   Dev Server            |
-|  GET /list           | --------------> |                         |
-|                      | <-------------- |  "food-classifier":     |
-|  Render UI controls: |  parameters:    |    parameters:          |
-|    model: [gpt-4 v]  |  { model: ..., |      model: "gpt-4"     |
-|    temp:  [0.7  ---] |    temp: ... }  |      temperature: 0.7   |
-|                      |                 |                         |
-|  User changes model  |                 |                         |
-|  to "gpt-4o", clicks |  POST /eval     |                         |
-|  "Run"               | --------------> |  parameters:            |
-|                      |  parameters:    |    { model: "gpt-4o",   |
-|                      |  { model:       |      temperature: 0.7 } |
-|                      |   "gpt-4o" }   |                         |
-|  Results stream back | <-------------- |  task receives params   |
-+----------------------+                 +-------------------------+
+ Braintrust Playground                           Developer's Machine
++---------------------------+                    +----------------------------+
+|                          |                    |  Dev Server                |
+|  GET /list               |  -------------->   |                            |
+|                          |  <--------------   |  "food-classifier":        |
+|  Render UI controls:     |  parameters:       |  parameters:               |
+|  model: [gpt-6-luna v]   |  { model: ...,     |  model: "gpt-6-luna"       |
+|  temp: [0.7 ---]         |  temp: ... }       |  temperature: 0.7          |
+|                          |                    |                            |
+|  User changes model      |                    |                            |
+|  to "gpt-6-sol", clicks  |  POST /eval        |                            |
+|  "Run"                   |  -------------->   |  parameters:               |
+|                          |  parameters:       |  { model: "gpt-6-sol",     |
+|                          |  { model:          |  temperature: 0.7 }        |
+|                          |  "gpt-6-sol" }     |                            |
+|  Results stream back     |  <--------------   |  task receives params      |
++---------------------------+                    +----------------------------+
 ```
 
 1. **Declaration**: The developer declares named parameters in the evaluator definition. Each parameter has a name, optional type, default value, and description.
@@ -52,13 +52,15 @@ evaluator = Evaluator(
         Scorer("exact_match", (expected, output) => output == expected ? 1.0 : 0.0)
     ],
     parameters = {
-        "model":       { type: "model", default: "gpt-4", description: "Model to use" },
+        "model":       { type: "model", default: "gpt-6-luna", description: "Model to use" },
         "temperature": { type: "data",  default: 0.7,     description: "Sampling temperature" }
     }
 )
 ```
 
-The Playground renders a model picker and temperature input. When the user selects "gpt-4o" and clicks "Run", the task receives `parameters = {"model": "gpt-4o", "temperature": 0.7}` (temperature keeps its default since the user didn't change it).
+The Playground renders a model picker and temperature input. When the user selects "gpt-6-sol" and clicks "Run", the task receives `parameters = {"model": "gpt-6-sol", "temperature": 0.7}` (temperature keeps its default since the user didn't change it).
+
+For these OpenAI examples, the task's provider request uses reasoning effort `none` so that the sampling temperature is supported. This provider setting is independent of parameter discovery and merging.
 
 ## Parameters vs. Input
 
@@ -66,7 +68,7 @@ The Playground renders a model picker and temperature input. When the user selec
 
 **Parameters** are per-run configuration — the same values apply to every test case in the run. They represent *how* the evaluator behaves.
 
-The typical workflow: run the same dataset (same inputs) with different parameter values to compare configurations. For example, run `model: "gpt-4"` and `model: "gpt-4o"` against identical test cases, then compare scores side-by-side in the Playground.
+The typical workflow: run the same dataset (same inputs) with different parameter values to compare configurations. For example, run `model: "gpt-6-luna"` and `model: "gpt-6-sol"` against identical test cases, then compare scores side-by-side in the Playground.
 
 ## Further Reading
 

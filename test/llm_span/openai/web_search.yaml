@@ -3,7 +3,9 @@ type: llm_span_test
 provider: openai
 endpoint: /v1/responses
 requests:
-  - model: gpt-4o
+  - model: gpt-6-luna
+    reasoning:
+      effort: none
     tools:
       - type: web_search_preview
         search_context_size: low
@@ -19,7 +21,7 @@ expected_brainstore_spans:
       prompt_tokens: !fn is_non_negative_number
       completion_tokens: !fn is_non_negative_number
     metadata:
-      model: !starts_with gpt-4o
+      model: !starts_with gpt-6-luna
       provider: openai
     span_attributes:
       type: llm

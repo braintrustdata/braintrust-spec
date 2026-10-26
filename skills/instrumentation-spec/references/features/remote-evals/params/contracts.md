@@ -10,7 +10,7 @@ A map from parameter name to parameter spec, declared in the evaluator definitio
 
 ```pseudocode
 evaluator.parameters = {
-  "model":       { type: "model", default: "gpt-4",  description: "Model to use" },
+  "model":       { type: "model", default: "gpt-6-luna",  description: "Model to use" },
   "temperature": { type: "data",  default: 0.7,      description: "Sampling temperature" },
   "max_length":  { type: "data",  default: 100,      description: "Max output length" }
 }
@@ -73,7 +73,7 @@ Body: a JSON object keyed by evaluator name. For each evaluator, the `parameters
         "model": {
           "type": "data",
           "schema": { "type": "string" },
-          "default": "gpt-4",
+          "default": "gpt-6-luna",
           "description": "Model to use"
         },
         "temperature": {
@@ -140,7 +140,7 @@ The `parameters` field in the request body carries the user's chosen values from
   "name": "food-classifier",
   "data": { ... },
   "parameters": {
-    "model": "gpt-4o",
+    "model": "gpt-6-sol",
     "temperature": 0.9
   }
 }

@@ -391,7 +391,7 @@ Instrumentation MAY preserve Google's native `contents`/`parts` structure. The `
 
 ```json
 {
-  "model": "gemini-2.5-flash",
+  "model": "gemini-3.8-flash",
   "contents": [
     {
       "role": "user",
@@ -790,7 +790,7 @@ Every LLM span MUST include:
 
 | Field      | Description                                                          | Example                  |
 | ---------- | -------------------------------------------------------------------- | ------------------------ |
-| `model`    | The resolved model identifier as returned by the API                 | `gpt-4o-mini-2024-07-18` |
+| `model`    | The resolved model identifier as returned by the API                 | `gpt-6-luna` |
 | `provider` | The provider, gateway, or reseller whose pricing applies to the call | `openai`                 |
 
 The `model` field SHOULD use the model string from the API response (which may include a version suffix) rather than the string the user passed in the request. The `provider` field is required even when model names are globally recognizable, because gateways and resellers can price the same model differently.

@@ -3,8 +3,9 @@ type: llm_span_test
 provider: openai
 endpoint: /v1/chat/completions
 requests:
-  - model: gpt-4o
-    max_tokens: 500
+  - model: gpt-6-luna
+    reasoning_effort: none
+    max_completion_tokens: 500
     temperature: 0.0
     tools:
       - type: function
@@ -31,7 +32,7 @@ expected_brainstore_spans:
       prompt_tokens: !fn is_non_negative_number
       completion_tokens: !fn is_non_negative_number
     metadata:
-      model: !starts_with gpt-4o
+      model: !starts_with gpt-6-luna
       provider: openai
     span_attributes:
       name: Chat Completion

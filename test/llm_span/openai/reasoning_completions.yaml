@@ -3,7 +3,7 @@ type: llm_span_test
 provider: openai
 endpoint: /v1/chat/completions
 requests:
-  - model: o4-mini
+  - model: gpt-6-luna
     reasoning_effort: medium
     messages:
       - role: user
@@ -17,7 +17,7 @@ expected_brainstore_spans:
       completion_tokens: !fn is_non_negative_number
       completion_reasoning_tokens: !fn is_positive_number
     metadata:
-      model: !starts_with o4-mini
+      model: !starts_with gpt-6-luna
       provider: openai
     span_attributes:
       name: Chat Completion

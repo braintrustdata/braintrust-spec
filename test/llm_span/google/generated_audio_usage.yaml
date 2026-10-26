@@ -1,18 +1,17 @@
 name: generated_audio_usage
 type: llm_span_test
 provider: google
-endpoint: /v1/models/gemini-2.5-flash-preview-tts:generateContent
+endpoint: /v1/models/gemini-3.8-flash-tts:generateContent
 requests:
   - contents:
       - role: user
         parts:
-          - text: "Read this sentence aloud: Hello and welcome to Braintrust."
+          - text: Hello and welcome to Braintrust.
     generationConfig:
       responseModalities: [AUDIO]
       speechConfig:
         voiceConfig:
-          prebuiltVoiceConfig:
-            voiceName: Kore
+          voice: Kore
 expected_brainstore_spans:
   - metrics:
       tokens: !fn is_non_negative_number
@@ -20,7 +19,7 @@ expected_brainstore_spans:
       completion_tokens: !fn is_non_negative_number
       completion_audio_tokens: !fn is_positive_number
     metadata:
-      model: !starts_with gemini-2.5-flash-preview-tts
+      model: !starts_with gemini-3.8-flash-tts
       provider: google
     span_attributes:
       type: llm

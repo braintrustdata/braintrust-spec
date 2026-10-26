@@ -97,7 +97,8 @@ type: llm_span_test
 provider: openai
 endpoint: /v1/chat/completions
 requests:
-  - model: gpt-4o-mini
+  - model: gpt-6-luna
+    reasoning_effort: none
     temperature: 0.0
     messages:
       - role: system
@@ -109,7 +110,7 @@ expected_brainstore_spans:
       tokens: !fn is_non_negative_number
       prompt_tokens: !fn is_non_negative_number
     metadata:
-      model: !starts_with "gpt-4o-mini"
+      model: !starts_with "gpt-6-luna"
       provider: openai
     span_attributes:
       name: Chat Completion

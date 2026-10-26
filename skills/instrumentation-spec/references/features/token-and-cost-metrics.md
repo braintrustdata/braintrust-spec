@@ -157,7 +157,7 @@ All rates are per million tokens. Cache-read and aggregate cache-write rates fal
     "type": "llm"
   },
   "metadata": {
-    "model": "claude-sonnet-4-5-20250929",
+    "model": "claude-sonnet-4-6",
     "provider": "anthropic"
   },
   "metrics": {
