@@ -8,6 +8,7 @@ This guide covers:
 
 - **LLM provider APIs** — direct calls to OpenAI, Anthropic, Google (Gemini), and other model providers
 - **Framework integrations** — LangChain, Vercel AI SDK, LiteLLM, agent frameworks, and similar
+- **Application logging** — explicit severity methods and opt-in adapters, specified in [Application logging](features/application-logging.md)
 
 It also covers explicit capture APIs for operations excluded from
 auto-instrumentation. It does NOT cover the Braintrust evaluation/scoring APIs
@@ -149,10 +150,12 @@ Braintrust supports the following `span_attributes.type` values:
 | `review`       | A human review/annotation                                                     |
 | `decision`     | A model call that answers typed questions about supplied state                |
 | `extraction`   | A model call that extracts, computes, estimates, or forecasts typed values    |
+| `log`          | An instantaneous application log record, optionally correlated with a span    |
 
 This guide primarily concerns `llm`, `tool`, and `task` spans. Eval-specific trace shape and attributes are specified in [Eval spans](features/eval-spans.md).
 Typed question calls MUST emit `decision` spans using the input and output contract in [Decision spans](features/decision-spans.md).
 Typed extraction calls MUST emit `extraction` spans using [Extraction spans](features/extraction-spans.md).
+Application logs follow [Application logging](features/application-logging.md). A log row has its own row ID but MAY share an active span's `span_id`; the unique-span and hierarchy rules below describe operation spans, not these correlated log records.
 
 ### Span hierarchy
 
