@@ -1,7 +1,7 @@
 name: generated_image_usage
 type: llm_span_test
 provider: google
-endpoint: /v1/models/gemini-2.5-flash-image:generateContent
+endpoint: /v1/models/gemini-nano-banana-2.1:generateContent
 requests:
   - contents:
       - role: user
@@ -16,7 +16,7 @@ expected_brainstore_spans:
       completion_tokens: !fn is_non_negative_number
       completion_image_tokens: !fn is_positive_number
     metadata:
-      model: !starts_with gemini-2.5-flash-image
+      model: !starts_with gemini-nano-banana-2.1
       provider: google
     span_attributes:
       type: llm

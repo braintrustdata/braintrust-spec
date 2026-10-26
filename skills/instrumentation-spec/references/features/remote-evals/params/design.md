@@ -59,9 +59,9 @@ The merge is straightforward:
 3. Forward the merged result
 
 ```
-defaults = { "model": "gpt-4", "temperature": 0.7 }
-request  = { "model": "gpt-4o" }
-merged   = { "model": "gpt-4o", "temperature": 0.7 }
+defaults = { "model": "gpt-6-luna", "temperature": 0.7 }
+request  = { "model": "gpt-6-sol" }
+merged   = { "model": "gpt-6-sol", "temperature": 0.7 }
 ```
 
 Parameters not present in the request keep their defaults. Parameters sent by the request but not declared in the evaluator are passed through as-is (do not reject unknown keys).
@@ -133,13 +133,13 @@ Playground                    Dev Server                  Evaluator
     |                              |                           |
     |  POST /eval                  |                           |
     |  { parameters: {             |                           |
-    |     "model": "gpt-4o" } }   |                           |
+    |     "model": "gpt-6-sol" } } |                           |
     |----------------------------->|                           |
     |                              | read defaults from specs  |
     |                              |<--------------------------|
     |                              |                           |
     |                              | merge: request + defaults |
-    |                              | = { "model": "gpt-4o",   |
+    |                              | = { "model": "gpt-6-sol", |
     |                              |     "temp": 0.7 }        |
     |                              |                           |
     |                              | run task with merged params

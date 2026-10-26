@@ -3,7 +3,7 @@ type: llm_span_test
 provider: openai
 endpoint: /v1/responses
 requests:
-  - model: o4-mini
+  - model: gpt-6-luna
     reasoning:
       effort: high
       summary: detailed
@@ -12,7 +12,7 @@ requests:
         content: >
           Look at this sequence: 2, 6, 12, 20, 30. What is the pattern and what
           would be the formula for the nth term?
-  - model: o4-mini
+  - model: gpt-6-luna
     reasoning:
       effort: high
       summary: detailed
@@ -28,7 +28,7 @@ expected_brainstore_spans:
       prompt_cached_tokens: !fn is_non_negative_number
       completion_reasoning_tokens: !fn is_non_negative_number
     metadata:
-      model: !starts_with "o4-mini"
+      model: !starts_with "gpt-6-luna"
       provider: openai
     span_attributes:
       type: llm
@@ -61,7 +61,7 @@ expected_brainstore_spans:
       prompt_cached_tokens: !fn is_non_negative_number
       completion_reasoning_tokens: !fn is_non_negative_number
     metadata:
-      model: !starts_with "o4-mini"
+      model: !starts_with "gpt-6-luna"
       provider: openai
     span_attributes:
       type: llm

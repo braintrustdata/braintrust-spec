@@ -21,7 +21,7 @@ For cross-provider token and estimated-cost semantics, including provider/model 
 
 ### Claude models
 
-Prompt caching is available on Claude 3 Haiku, Claude 3.5 Haiku, Claude 3.5 Sonnet, Claude 3 Opus, Claude 3.7 Sonnet, and every Claude 4 / 4.5 / 4.6 model (Sonnet, Opus, Haiku variants). See the upstream reference for the authoritative list.
+Prompt caching is available on supported Claude models, including Claude Sonnet 4.6, which the conformance tests use. Model availability and minimum cacheable prompt lengths vary by model and platform; see the upstream reference for the current supported models and thresholds.
 
 ### Anthropic SDK versions
 

@@ -5,7 +5,7 @@ type: llm_span_test
 provider: anthropic
 endpoint: /v1/messages
 requests:
-  - model: claude-sonnet-4-5-20250929
+  - model: claude-sonnet-4-6
     max_tokens: 1024
     messages:
       - role: user
@@ -21,7 +21,7 @@ expected_brainstore_spans:
       # The web-search cost signal the backend prices.
       server_tool_use_web_search_requests: !fn is_positive_number
     metadata:
-      model: !starts_with claude-sonnet-4-5
+      model: !starts_with claude-sonnet-4-6
       provider: anthropic
     span_attributes:
       type: llm

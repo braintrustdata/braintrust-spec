@@ -16,7 +16,7 @@ requests:
   # One cache_control breakpoint with the extended 1h TTL. The cached text is
   # a large atlas of capital cities, padded well past Claude Sonnet's minimum
   # cacheable size (1024 tokens).
-  - model: claude-sonnet-4-5-20250929
+  - model: claude-sonnet-4-6
     temperature: 0.0
     max_tokens: 128
     system:
@@ -259,7 +259,7 @@ expected_brainstore_spans:
       prompt_cache_creation_tokens: !fn undefined_or_null
       prompt_cache_creation_1h_tokens: !fn is_positive_number
     metadata:
-      model: claude-sonnet-4-5-20250929
+      model: claude-sonnet-4-6
       provider: anthropic
     span_attributes:
       name: anthropic.messages.create

@@ -1,7 +1,7 @@
 name: attachments
 type: llm_span_test
 provider: google
-endpoint: /v1/models/gemini-3.1-flash-lite-preview:generateContent
+endpoint: /v1/models/gemini-3.5-flash-lite:generateContent
 requests:
   - contents:
       - role: user
@@ -32,7 +32,7 @@ expected_brainstore_spans:
       completion_tokens: !fn is_non_negative_number
       prompt_audio_tokens: !fn is_positive_number
     metadata:
-      model: !starts_with gemini-3.1-flash-lite
+      model: !starts_with gemini-3.5-flash-lite
       provider: google
     span_attributes:
       name: generate_content
@@ -44,7 +44,7 @@ expected_brainstore_spans:
         instrumentation:
           name: !fn is_non_empty_string
     input:
-      model: !starts_with gemini-3.1-flash-lite
+      model: !starts_with gemini-3.5-flash-lite
       contents:
         - role: user
           parts:
