@@ -3,6 +3,8 @@
 This spec defines Braintrust instrumentation for Model Context Protocol (MCP) server libraries.
 It applies across languages, server abstractions, and transports.
 The integration API and the mechanism used to observe incoming requests and outgoing responses are implementation-specific.
+Span naming, kinds, attributes, context propagation, and error classification follow the [OpenTelemetry MCP semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md), which are currently in development.
+This document defines their mapping to Braintrust rows and the Braintrust-specific payload, provenance, and cancellation fields.
 
 ## Scope
 
@@ -13,8 +15,9 @@ Instrument server-side processing of incoming MCP requests, including:
 - `resources/read`: read resource contents.
 
 Discovery, initialization, ping, subscription requests, and custom request methods are also eligible where supported by the protocol version and server library.
-Notifications and responses to server-initiated requests MUST NOT create independent MCP request spans.
-Notifications MAY update an existing request span, for example when a request is cancelled.
+Incoming notifications also produce server spans for their processing, without a request ID or an expected JSON-RPC response.
+A notification MAY additionally update an existing request span, for example when a request is cancelled.
+Responses to server-initiated requests MUST NOT create new server spans.
 Client-side MCP instrumentation is outside the scope of this spec.
 The [auto-instrumentation eligibility rules](../instrumentation-guide.md#auto-instrumentation-eligibility) still apply: task submission and separate polling or retrieval lifecycles MUST NOT be auto-instrumented.
 For subscriptions, capture only the request and its response; do not keep a span open for subsequent notifications or the subscription lifetime.
@@ -22,8 +25,11 @@ For subscriptions, capture only the request and its response; do not keep a span
 ## Span model
 
 Each eligible incoming request MUST produce exactly one span.
+Each eligible incoming notification MUST likewise produce exactly one span.
+OTel integrations SHOULD use span kind `SERVER`; this is distinct from Braintrust's `span_attributes.type`.
 Start the span when the transport delivers the parsed request, before validation, dispatch, or handler execution.
 End it when sending the corresponding result or error response completes or fails, including asynchronous sends.
+For notifications, start at receipt and end when processing and any transport acknowledgement complete; do not wait for a JSON-RPC response.
 This captures validation and dispatch failures even when no handler runs, and includes response serialization and sending in the request duration.
 Cancellation and connection closure can end a request without a response, as specified below.
 The exact transport hooks are implementation-specific; observing only the handler lifetime does not cover the full request lifecycle.
@@ -35,19 +41,25 @@ End each span at most once and release its pending correlation state on every te
 
 | MCP method | `span_attributes.type` | `span_attributes.name` | `input` |
 | --- | --- | --- | --- |
-| `tools/call` | `tool` | Requested tool name; `tools/call` if unavailable | Tool arguments |
-| `prompts/get` | `function` | `prompts/get` | Prompt arguments |
+| `tools/call` | `tool` | `tools/call <tool name>`; `tools/call` if unavailable | Tool arguments |
+| `prompts/get` | `function` | `prompts/get <prompt name>`; `prompts/get` if unavailable | Prompt arguments |
 | `resources/read` | `function` | `resources/read` | `{ "uri": <requested URI> }` |
 | Other eligible request methods | `function` | The MCP method | Omitted unless an explicit capture contract permits it |
+| Notifications | `function` | The MCP method | Omitted unless an explicit capture contract permits it |
 
+Names follow `<method> <target>` when a low-cardinality tool or prompt name is available, and `<method>` otherwise.
+Resource URIs MUST NOT appear in span names by default; integrations MAY offer an explicit opt-in to include them.
+The `input` column describes the payload when content capture is enabled, as specified below.
 Capture arguments as structured values rather than JSON-encoded strings.
 If arguments are absent, omit `input`; do not invent arguments.
-Prompt names and resource URIs belong in metadata, not in span names.
 Do not capture the full request envelope, transport headers, or authentication context as input or metadata.
 Translate allowlisted protocol `_meta` fields as specified below; do not copy the raw `_meta` object.
 
-The request span MUST use valid incoming trace context when available, otherwise the active parent context when one exists, and otherwise start a new trace.
-It MUST be active during request processing, including validation, dispatch, and handler execution, so nested LLM calls, tool calls, and manual spans become its children.
+By default, the operation span MUST use valid trace context extracted from MCP `params._meta` as its remote parent, or start a new trace if none is available.
+OTel integrations SHOULD link the ambient context, such as an HTTP server span, when present and distinct from the MCP parent.
+The transport context MUST NOT replace the MCP parent by default: one HTTP stream can carry multiple MCP operations, and a single MCP operation can span multiple HTTP requests.
+Apply the same extraction rules to notifications.
+The operation span MUST be active during processing, including validation, dispatch, and handler execution, so nested LLM calls, tool calls, and manual spans become its children.
 Concurrent requests MUST keep independent active contexts.
 Cross-process parenting follows [Distributed tracing](distributed-tracing.md); session and request IDs are correlation metadata and MUST NOT be used as trace or parent span IDs.
 Do not create an extra span spanning the server or session lifetime.
@@ -58,21 +70,32 @@ LLM calls made by a handler record those fields on their own spans under the exi
 
 ## Metadata
 
-Use these flat keys within `metadata`:
+Use the standard semantic-convention keys as flat keys within Braintrust `metadata` and as attributes on OTel spans.
 
 | Field | Requirement | Value |
 | --- | --- | --- |
-| `mcp.method` | MUST | The MCP method being handled. |
-| `mcp.session_id` | SHOULD when available | The session identifier exposed by the server library or transport. |
-| `mcp.request_id` | MUST when available | The protocol request ID, preserving its string or numeric type. |
-| `mcp.prompt_name` | MUST for `prompts/get` when available | The requested prompt name. |
-| `mcp.resource_uri` | MUST for `resources/read` when available | The requested resource URI. |
+| `mcp.method.name` | MUST | The request or notification method. |
+| `mcp.session.id` | SHOULD when available | The actual MCP session identifier. |
+| `jsonrpc.request.id` | MUST when available | String representation of a non-null request ID, including `"0"` for numeric `0`; omit for notifications. |
+| `gen_ai.tool.name` | MUST when applicable | The tool name. |
+| `gen_ai.prompt.name` | MUST when applicable | The prompt name. |
+| `gen_ai.operation.name` | SHOULD for tool calls | `execute_tool`; omit for other operations. |
+| `mcp.resource.uri` | MUST when applicable | The resource URI for reads, subscriptions, unsubscriptions, or resource-update notifications. |
+| `mcp.protocol.version` | SHOULD when known | The MCP version used by the operation, from request metadata or negotiated protocol state. |
+| `jsonrpc.protocol.version` | SHOULD when not `2.0` | The JSON-RPC version, distinct from the MCP version. |
+| `rpc.response.status_code` | MUST on JSON-RPC error responses | String representation of the response's error code. |
+| `error.type` | MUST if and only if the operation fails | Low-cardinality error classification, as specified below. |
+| `network.transport` | SHOULD when known | Underlying transport, such as `pipe` for stdio or `tcp` / `quic` for HTTP. |
+| `network.protocol.name` | SHOULD when applicable | Lowercase application protocol, such as `http` or `websocket`. |
+| `network.protocol.version` | SHOULD when applicable | Actual application protocol version, such as `1.1` or `2` for HTTP. |
+| `client.address` | SHOULD when available | Client address exposed by the transport; do not perform reverse DNS lookups to obtain it. |
+| `client.port` | SHOULD when available with `client.address` | Numeric client port. |
 | `mcp.cancelled` | MUST for observed request cancellation | Boolean `true`; omitted otherwise. |
 
-When the transport has no session ID, an integration MAY generate a stable opaque identifier per connection.
-Such an identifier MUST be reused for requests on that connection and MUST NOT be shared across independent connections.
-If neither a session nor a connection can be identified reliably, omit `mcp.session_id`.
-Do not synthesize request IDs or infer model tool-call IDs from MCP request IDs.
+Omit `mcp.session.id` when the operation is not part of an MCP session; do not substitute a generated connection ID.
+Internal response correlation MUST still preserve the original request ID type, even though `jsonrpc.request.id` is serialized as a string in telemetry.
+Do not synthesize request IDs or infer `gen_ai.tool.call.id` from JSON-RPC request IDs.
+`mcp.cancelled` and the `mcp.client.*` / `mcp.server.*` identity fields below are Braintrust extensions, not standard OTel MCP attributes.
 
 The [data capturing policy](../instrumentation-guide.md#data-capturing-policy) applies to additional metadata.
 Do not copy arbitrary handler context or protocol metadata into the span.
@@ -81,14 +104,14 @@ Span-origin provenance identifies the Braintrust integration using the normal [c
 ### Protocol `_meta` allowlist
 
 Integrations MUST translate the following well-known fields when present with the expected types.
-The mappings apply to request `params._meta` and response `result._meta` in the directions specified below.
+The mappings apply to incoming request/notification `params._meta` and outgoing response `result._meta` in the directions specified below.
 
 | Source | Translation |
 | --- | --- |
-| Request `io.modelcontextprotocol/protocolVersion` string | `metadata["mcp.protocol_version"]` |
+| Request `io.modelcontextprotocol/protocolVersion` string | `metadata["mcp.protocol.version"]` |
 | Request `io.modelcontextprotocol/clientInfo` object | String `name`, `title`, and `version` fields become `metadata["mcp.client.name"]`, `metadata["mcp.client.title"]`, and `metadata["mcp.client.version"]`. |
 | Response `io.modelcontextprotocol/serverInfo` object | String `name`, `title`, and `version` fields become `metadata["mcp.server.name"]`, `metadata["mcp.server.title"]`, and `metadata["mcp.server.version"]`. |
-| Request `traceparent`, `tracestate`, and `baggage` strings | Extract distributed trace context before starting the request span, following [Distributed tracing](distributed-tracing.md). |
+| Request or notification `traceparent`, `tracestate`, and `baggage` strings | Extract distributed trace context before starting the operation span, following [Distributed tracing](distributed-tracing.md). |
 
 Trace propagation fields establish trace identity, parentage, and Braintrust routing; they MUST NOT be copied into span metadata or payloads.
 Invalid propagation values follow the distributed tracing validation rules and MUST NOT prevent request processing.
@@ -99,7 +122,21 @@ The `io.modelcontextprotocol/` prefix is not a wildcard allowlist.
 Other keys, including capabilities, log levels, progress tokens, and extension fields, MUST be omitted unless an integration explicitly allowlists them with a defined translation under the data capturing policy.
 Omit missing or incorrectly typed fields rather than stringifying objects or copying unrecognized properties.
 
-## Output
+## Content capture
+
+Following OTel's opt-in content capture policy, instrumentation MUST NOT capture tool arguments, prompt argument values, resource contents, or result payloads by default.
+An explicit user setting MUST enable this capture; the setting's API is implementation-specific.
+When enabled, use the `input` shapes above and the `output` shapes below, with the existing attachment and span customization rules.
+Disabling content capture leaves span identity, timing, allowlisted metadata, and error classification available.
+For returned tool errors, do not extract content text into `error` when content capture is disabled; use a generic message instead.
+
+Native Braintrust integrations use `input` and `output` as their content fields.
+OTel integrations exporting to Braintrust use the corresponding `braintrust.input_json` and `braintrust.output_json` attributes described in the instrumentation guide.
+When also emitting standard OTel content attributes, `gen_ai.tool.call.arguments` maps to tool input, `gen_ai.tool.call.result` to successful tool output, and `gen_ai.prompt.variable.<argument_name>` to individual prompt arguments serialized as strings.
+These optional attributes MUST use the same capture setting and sanitized values; they MUST NOT bypass redaction or attachment handling.
+Braintrust's structured payloads and capture of partial/error tool output are extensions to the OTel content conventions.
+
+### Output
 
 Capture the MCP result object as `output`, without the JSON-RPC response envelope:
 
@@ -127,41 +164,60 @@ Instrumentation failures MUST NOT prevent or retry handler execution, change its
 
 ## Errors
 
-A thrown exception, failed asynchronous result, or outgoing JSON-RPC error response MUST populate the span's top-level `error` field, except for cancellation as specified below.
-For a JSON-RPC error response, capture its code and message without copying arbitrary error `data`.
-This includes failures before the handler runs, such as invalid parameters or an unknown method.
+A failed operation MUST populate the span's top-level `error` field and `metadata["error.type"]`, except for cancellation as specified below.
+OTel spans SHOULD set status `ERROR` for these failures and leave status `UNSET` for successful operations and non-error outcomes.
+When a JSON-RPC error response is available, always record its code as a string in `rpc.response.status_code`, without copying arbitrary error `data`.
+
+Follow OTel's server-side classification: `-32700` (parse error), `-32600` (invalid request), `-32601` (method not found), `-32602` (invalid params), and `-32002` (resource not found) are caller errors and SHOULD NOT mark the server span as failed.
+For these responses, omit the top-level `error` and `error.type` and leave OTel status `UNSET`, unless an independent server failure occurred.
+Observe such responses only when they can be correlated to an operation; do not invent a method or request ID for an unparseable message.
+Other JSON-RPC error codes SHOULD mark the operation as failed, with `error.type` set to the code's string representation and the error/status description taken from the response message when available.
+For exceptions, timeouts, or transport failures without a JSON-RPC error response, use a predictable error type such as the exception class or `timeout`, falling back to `_OTHER` if no classification is available.
+Do not use exception messages or request-specific values as `error.type`.
+Classify the final operation outcome rather than treating an internally caught validation exception as an independent server failure.
 If an error response will be sent, keep the span open through the send; if processing terminates without a response, end the span at that point.
 A response-send failure or connection closure MUST end affected pending spans with an error unless they have already ended through cancellation.
 Propagate the original failure unchanged.
 Do not fabricate an `output` when no result was returned.
 
-A tool result with `isError: true` MUST also populate `error`, even when the handler returns normally.
-Use the result's text content as the error message when available; otherwise use a descriptive fallback such as `Tool returned an error result`.
-Keep the captured result in `output`, including `isError` and any partial content.
+A tool result with `isError: true` MUST populate `error` and set `error.type = "tool_error"`, even when the JSON-RPC call succeeds.
+Do not invent a `rpc.response.status_code` for a successful JSON-RPC result.
+Use the result's text content as the error message when content capture is enabled and text is available; otherwise use a descriptive fallback such as `Tool returned an error result`.
+When content capture is enabled, keep the captured result in `output`, including `isError` and any partial content.
 Do not throw an exception merely because a tool returned an error result.
 
 ### Cancellation
 
 When the server observes that a pending request is cancelled, set `metadata["mcp.cancelled"] = true` and end the span when request processing terminates, even if no response is sent.
 Use an explicit cancellation signal from the protocol or runtime, not a substring match on an exception message.
-A cancellation notification must be correlated to a pending request on the same connection; it does not create a separate span.
-Receiving a cancellation request does not prove that the server honored it: ignored, unknown, or already-completed cancellations MUST NOT mark a successful request as cancelled or create a new span.
+Correlate a cancellation notification only to a matching pending request on the same connection.
+Its own notification-processing span does not replace or extend the target request span and MUST NOT inherit the target request's cancellation state.
+Receiving a cancellation request does not prove that the server honored it: ignored, unknown, or already-completed cancellations MUST NOT mark a successful request as cancelled or create a new span for the target request.
 
-Cancellation alone MUST NOT populate `error`, including when the runtime represents it as an exception or a protocol error response.
+Cancellation alone MUST NOT populate `error` or `error.type`, or set OTel status `ERROR`, including when the runtime represents it as an exception or a protocol error response.
 Preserve an independently observed failure if one occurred before cancellation.
 Do not fabricate an output or capture the notification's free-form cancellation reason.
 Late responses or duplicate cancellation signals MUST NOT end the span again or overwrite its terminal outcome.
 Instrumentation MUST preserve the server library's cancellation behavior.
 
+## OTel metrics
+
+Integrations with an OTel metrics pipeline SHOULD emit `mcp.server.operation.duration` as a histogram in seconds for the same lifetime as the server operation span.
+Use the upstream recommended bucket boundaries: `[0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]`.
+Use `mcp.method.name` and applicable low-cardinality attributes from the upstream metric definition, including tool/prompt name, protocol/transport attributes, response status code, and error type, with the same error classification as the span.
+Do not add request IDs, session IDs, client addresses, prompt argument values, or resource URIs to metric dimensions by default.
+Where an actual MCP session lifecycle is observable, integrations SHOULD also emit `mcp.server.session.duration` according to the upstream metric definition; do not fabricate sessions or add session-lifetime spans.
+These are OTel metric instruments, not new fields in a Braintrust row's `metrics` object, which continues to record `start` and `end`.
+
 ## Example
 
-A successful tool request produces a row with these fields, in addition to normal span identity, timing, and provenance:
+A successful tool request with content capture enabled produces a row with these fields, in addition to normal span identity, timing, and provenance:
 
 ```json
 {
   "span_attributes": {
     "type": "tool",
-    "name": "get_weather"
+    "name": "tools/call get_weather"
   },
   "input": { "city": "Vienna" },
   "output": {
@@ -169,9 +225,14 @@ A successful tool request produces a row with these fields, in addition to norma
     "structuredContent": { "forecast": "sunny" }
   },
   "metadata": {
-    "mcp.method": "tools/call",
-    "mcp.session_id": "session-1",
-    "mcp.request_id": 7
+    "mcp.method.name": "tools/call",
+    "gen_ai.tool.name": "get_weather",
+    "gen_ai.operation.name": "execute_tool",
+    "mcp.session.id": "session-1",
+    "jsonrpc.request.id": "7",
+    "network.transport": "tcp",
+    "network.protocol.name": "http",
+    "network.protocol.version": "2"
   }
 }
 ```
@@ -181,18 +242,23 @@ A successful tool request produces a row with these fields, in addition to norma
 SDK implementations SHOULD cover:
 
 - Tool calls, prompt retrievals, and resource reads produce the specified span type, name, input, output, and metadata.
-- Discovery, initialization, ping, subscription, and custom requests produce method-named `function` spans without unallowlisted payloads; notifications produce no independent spans.
+- Discovery, initialization, ping, subscription, and custom requests produce method-named `function` spans without unallowlisted payloads; notifications produce spans ending after processing/acknowledgement without waiting for a JSON-RPC response.
+- OTel spans use kind `SERVER`; tool and prompt names follow `<method> <target>`, while resource URIs are absent from names by default.
 - Request timing includes validation, dispatch, and asynchronous response sending, including failures before handler execution and during sending.
-- Missing arguments and optional identifiers remain absent; numeric request ID `0` is preserved.
+- Missing arguments and optional identifiers remain absent; numeric request ID `0` becomes `jsonrpc.request.id = "0"`, with original ID types retained for correlation.
 - Nested work uses the request span as its parent, including across asynchronous boundaries and concurrent requests.
 - Repeated instrumentation produces no duplicates, while separate requests produce distinct spans, including reused IDs and equal IDs on different connections.
-- Thrown failures and returned tool error results both populate `error` without changing application behavior.
-- Cancellation sets `mcp.cancelled` without an error for cancellation alone; ignored or late cancellations do not change completed outcomes.
+- Server failures set `error`, `error.type`, and OTel status `ERROR`; returned tool errors use `tool_error` without a fabricated response status code.
+- JSON-RPC caller errors, including unknown methods and invalid arguments, record `rpc.response.status_code` without marking the server span as failed; internal errors such as `-32603` do mark it as failed.
+- Cancellation sets `mcp.cancelled` without an error or OTel error status for cancellation alone; ignored or late cancellations do not change completed outcomes, and notification-processing spans remain distinct.
 - Cancellation, connection closure, and response races end affected spans at most once and release pending state.
 - Allowlisted protocol `_meta` fields are translated while unknown keys and raw `_meta` are omitted; structured application data and content order are preserved.
-- Valid incoming `_meta` trace context establishes parentage and routing; invalid context does not break processing, and response context does not reparent the span.
+- Valid incoming `_meta` trace context establishes parentage and routing; ambient transport context is linked, missing/invalid MCP context starts a new trace by default, and response context does not reparent the span.
+- Content capture is disabled by default; enabling it produces the specified Braintrust payloads, and optional OTel content attributes obey the same capture and sanitization settings.
 - Inline and nested media follow attachment rules, including disabled capture and conversion failures, without mutating results or fetching resource links.
-- Session correlation remains stable within a connection and distinct across independent connections.
+- Actual MCP session IDs are recorded when available; connection identifiers are not substituted for absent sessions.
+- Transport attributes distinguish stdio (`pipe`) and HTTP (`tcp` or `quic`, with the actual HTTP version).
+- OTel operation duration uses seconds and matches the span lifetime and error classification, without high-cardinality correlation IDs in metric dimensions.
 
 # SDK support
 
@@ -274,6 +340,38 @@ support:
     ruby: "unknown"
     rust: "unknown"
   protocol-metadata-translation:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  otel-semantic-conventions:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  notification-spans:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  opt-in-content-capture:
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  otel-server-metrics:
     dotnet: "unknown"
     go: "unknown"
     java: "unknown"
