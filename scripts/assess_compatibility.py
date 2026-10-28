@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from datetime import date, datetime, timezone
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
-from urllib.parse import quote
 
 from compatibility import REPO_ROOT, STATUSES, load_catalog, update_support_statuses
 
@@ -21,15 +19,6 @@ SDK_REPOSITORIES = {
         "python": "python", "ruby": "ruby", "rust": "rust",
     }.items()
 }
-# GitHub cron cannot express a fortnight. Gate a weekly Monday trigger by elapsed
-# weeks from a fixed Monday, rather than ISO week parity (which breaks at year-end).
-SCHEDULE_ANCHOR = date(2026, 9, 28)
-
-
-def scheduled_week(today: date) -> bool:
-    return ((today - SCHEDULE_ANCHOR).days // 7) % 2 == 0
-
-
 def non_yes_cells(root: str = REPO_ROOT) -> dict[str, list[dict]]:
     catalog = load_catalog(root)
     missing = {sdk.key for sdk in catalog.sdks} - SDK_REPOSITORIES.keys()
@@ -51,6 +40,13 @@ def non_yes_cells(root: str = REPO_ROOT) -> dict[str, list[dict]]:
 def write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def write_outputs(values: str) -> None:
+    print(values, end="")
+    if output := os.environ.get("GITHUB_OUTPUT"):
+        with open(output, "a", encoding="utf-8") as handle:
+            handle.write(values)
 
 
 def command(*args: str) -> str:
@@ -141,13 +137,13 @@ def validate(request: dict, result: dict, expected: list[dict],
     return assessments
 
 
-def apply(results: Path, report: Path, root: str = REPO_ROOT) -> int:
+def apply(results: Path, root: str = REPO_ROOT) -> tuple[int, list[str]]:
     expected = non_yes_cells(root)
     requests = sorted(results.glob("*/request.json"))
     seen = set()
     updates = {}
-    audit = []
-    # Validate all results before touching any spec. Never accept a partial run.
+    # Validate all present results before touching any spec. SDKs whose research
+    # failed or timed out upload no artifact; their cells are simply not reassessed.
     for path in requests:
         request = json.loads(path.read_text(encoding="utf-8"))
         sdk = request["sdk"]
@@ -156,14 +152,6 @@ def apply(results: Path, report: Path, root: str = REPO_ROOT) -> int:
         seen.add(sdk)
         result = json.loads(path.with_name("result.json").read_text(encoding="utf-8"))
         assessments = validate(request, result, expected[sdk])
-        for item in assessments:
-            for evidence in item["evidence"]:
-                evidence["url"] = (
-                    f"https://github.com/{request['repository']}/blob/"
-                    f"{request['revision']}/{quote(evidence['path'], safe='/')}"
-                    f"#L{evidence['start_line']}-L{evidence['end_line']}"
-                )
-        audit.append({**request, "assessments": assessments})
         prior = {
             (cell["feature"], cell["capability"]): cell["current_status"]
             for cell in expected[sdk]
@@ -172,8 +160,9 @@ def apply(results: Path, report: Path, root: str = REPO_ROOT) -> int:
             previous = prior[(item["feature"], item["capability"])]
             if item["status"] not in ("unknown", previous):
                 updates[(item["feature"], item["capability"], sdk)] = item["status"]
-    if seen != set(expected):
-        raise ValueError(f"Missing SDK results: {sorted(set(expected) - seen)}")
+    if not seen:
+        raise ValueError("No SDK assessment results to apply")
+    missing = sorted(set(expected) - seen)
     catalog = load_catalog(root)
     pending = {}
     for feature in catalog.features:
@@ -188,38 +177,27 @@ def apply(results: Path, report: Path, root: str = REPO_ROOT) -> int:
         )
     for path, text in pending.items():
         path.write_text(text, encoding="utf-8")
-    if updates:
-        write_json(report, {
-            "assessed_at": datetime.now(timezone.utc).isoformat(),
-            "note": "Automated source assessment; human review required. Other catalog values may still be prototype data.",
-            "sdks": audit,
-        })
     counts = Counter(updates.values())
     print(f"Updated {len(updates)} non-yes cells: {dict(counts)}")
-    return len(updates)
+    for sdk in missing:
+        print(f"::warning::No validated assessment for {sdk}; its cells were not reassessed")
+    return len(updates), missing
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="operation", required=True)
-    plan = commands.add_parser("plan")
-    plan.add_argument("--event", choices=["schedule", "workflow_dispatch"], required=True)
+    commands.add_parser("plan")
     for operation in ("prepare", "validate"):
         sub = commands.add_parser(operation)
         sub.add_argument("--sdk", choices=SDK_REPOSITORIES, required=True)
         sub.add_argument("--directory", type=Path, required=True)
     update = commands.add_parser("apply")
     update.add_argument("--results", type=Path, required=True)
-    update.add_argument("--report", type=Path, default=Path(REPO_ROOT) / "capabilities/assessment.json")
     args = parser.parse_args()
     if args.operation == "plan":
-        due = args.event == "workflow_dispatch" or scheduled_week(datetime.now(timezone.utc).date())
-        matrix = {"sdk": list(non_yes_cells()) if due else []}
-        values = f"enabled={str(bool(matrix['sdk'])).lower()}\nmatrix={json.dumps(matrix)}\n"
-        print(values, end="")
-        if output := os.environ.get("GITHUB_OUTPUT"):
-            with open(output, "a", encoding="utf-8") as handle:
-                handle.write(values)
+        matrix = {"sdk": list(non_yes_cells())}
+        write_outputs(f"enabled={str(bool(matrix['sdk'])).lower()}\nmatrix={json.dumps(matrix)}\n")
     elif args.operation == "prepare":
         prepare(args.sdk, args.directory)
     elif args.operation == "validate":
@@ -230,7 +208,8 @@ def main() -> None:
         validate(request, result, non_yes_cells()[args.sdk], args.directory / "source")
         print(f"Validated all {len(result['assessments'])} assessments for {args.sdk}")
     else:
-        apply(args.results, args.report)
+        _, missing = apply(args.results)
+        write_outputs(f"missing={', '.join(missing)}\n")
 
 
 if __name__ == "__main__":

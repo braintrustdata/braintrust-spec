@@ -1,6 +1,4 @@
 from copy import deepcopy
-from datetime import date, timedelta
-import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -56,7 +54,6 @@ class AssessmentTests(unittest.TestCase):
              "rationale": "No conclusive evidence available.", "evidence": []},
         ]}
         self.results = self.root / "results"
-        self.report = self.root / "capabilities/assessment.json"
 
     def store_result(self):
         assess.write_json(self.results / "assessment-go/request.json", self.request)
@@ -77,7 +74,7 @@ class AssessmentTests(unittest.TestCase):
 
     def test_apply_preserves_yes_and_inconclusive_cells(self):
         self.store_result()
-        self.assertEqual(1, assess.apply(self.results, self.report, str(self.root)))
+        self.assertEqual((1, []), assess.apply(self.results, str(self.root)))
         rows = load_catalog(str(self.root)).features[0].rows
         self.assertEqual([("partial", "yes"), ("unknown", "no")], [
             (row.cells["go"].status, row.cells["python"].status) for row in rows
@@ -86,12 +83,6 @@ class AssessmentTests(unittest.TestCase):
             SPEC.replace('"unknown" # pending unknown assessment',
                          '"partial" # pending unknown assessment'),
             self.spec.read_text(),
-        )
-        report = json.loads(self.report.read_text())
-        evidence = report["sdks"][0]["assessments"][0]["evidence"][0]
-        self.assertEqual(
-            f"https://github.com/braintrustdata/braintrust-sdk-go/blob/{'a' * 40}/sdk.go#L1-L2",
-            evidence["url"],
         )
 
     def test_missing_duplicate_and_unrequested_decisions_are_rejected_before_writes(self):
@@ -106,9 +97,8 @@ class AssessmentTests(unittest.TestCase):
                 self.result = {"assessments": decisions}
                 self.store_result()
                 with self.assertRaises(ValueError):
-                    assess.apply(self.results, self.report, str(self.root))
+                    assess.apply(self.results, str(self.root))
                 self.assertEqual(SPEC, self.spec.read_text())
-                self.assertFalse(self.report.exists())
 
     def test_stale_assessment_cannot_overwrite_changed_non_yes_status(self):
         self.store_result()
@@ -116,23 +106,26 @@ class AssessmentTests(unittest.TestCase):
                                '"no" # pending unknown assessment')
         self.spec.write_text(current)
         with self.assertRaises(ValueError):
-            assess.apply(self.results, self.report, str(self.root))
+            assess.apply(self.results, str(self.root))
         self.assertEqual(current, self.spec.read_text())
 
-    def test_inconclusive_run_creates_no_changes_or_report(self):
+    def test_inconclusive_run_creates_no_changes(self):
         self.result["assessments"][0]["status"] = "unknown"
         self.store_result()
-        self.assertEqual(0, assess.apply(self.results, self.report, str(self.root)))
+        self.assertEqual((0, []), assess.apply(self.results, str(self.root)))
         self.assertEqual(SPEC, self.spec.read_text())
-        self.assertFalse(self.report.exists())
 
-    def test_missing_sdk_results_cannot_publish_partial_run(self):
+    def test_missing_sdk_results_apply_remaining_sdks(self):
         self.store_result()
         (self.results / "assessment-python/request.json").unlink()
-        before = self.spec.read_text()
+        self.assertEqual((1, ["python"]), assess.apply(self.results, str(self.root)))
+        rows = load_catalog(str(self.root)).features[0].rows
+        self.assertEqual("partial", rows[0].cells["go"].status)
+
+    def test_no_sdk_results_fails(self):
         with self.assertRaises(ValueError):
-            assess.apply(self.results, self.report, str(self.root))
-        self.assertEqual(before, self.spec.read_text())
+            assess.apply(self.results, str(self.root))
+        self.assertEqual(SPEC, self.spec.read_text())
 
     def test_known_decision_requires_evidence(self):
         self.result["assessments"][0]["evidence"] = []
@@ -196,26 +189,20 @@ class AssessmentTests(unittest.TestCase):
                 "evidence": [{"path": "sdk.py", "start_line": 1, "end_line": 2}],
             }],
         })
-        self.assertEqual(3, assess.apply(self.results, self.report, str(self.root)))
+        self.assertEqual((3, []), assess.apply(self.results, str(self.root)))
         rows = load_catalog(str(self.root)).features[0].rows
         self.assertEqual([("partial", "yes"), ("yes", "no")], [
             (row.cells["go"].status, row.cells["python"].status) for row in rows
         ])
 
-    def test_unchanged_known_results_create_no_changes_or_report(self):
+    def test_unchanged_known_results_create_no_changes(self):
         current = SPEC.replace('"unknown" # pending unknown assessment',
                                '"partial" # pending unknown assessment')
         self.spec.write_text(current)
         self.request["capabilities"] = assess.non_yes_cells(str(self.root))["go"]
         self.store_result()
-        self.assertEqual(0, assess.apply(self.results, self.report, str(self.root)))
+        self.assertEqual((0, []), assess.apply(self.results, str(self.root)))
         self.assertEqual(current, self.spec.read_text())
-        self.assertFalse(self.report.exists())
-
-    def test_fortnightly_schedule_survives_iso_week_53_and_year_boundary(self):
-        days = [date(2026, 12, 21) + timedelta(weeks=i) for i in range(4)]
-        self.assertEqual([True, False, True, False], [assess.scheduled_week(day) for day in days])
-        self.assertTrue(assess.scheduled_week(assess.SCHEDULE_ANCHOR))
 
 
 if __name__ == "__main__":
