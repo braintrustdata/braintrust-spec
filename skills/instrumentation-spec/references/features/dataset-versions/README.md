@@ -231,7 +231,7 @@ category: Datasets
 support:
   dataset-versioning:
     dotnet: "partial"
-    go: "no"
+    go: "partial"
     java: "partial"
     js: "yes"
     python: "partial"

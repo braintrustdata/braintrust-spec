@@ -251,7 +251,7 @@ support:
     dotnet: "no"
     go: "yes"
     java: "yes"
-    js: "partial"
+    js: "yes"
     python: "partial"
     ruby: "partial"
     rust: "no"
