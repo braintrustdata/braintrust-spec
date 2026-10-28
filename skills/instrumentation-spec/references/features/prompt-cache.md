@@ -220,7 +220,7 @@ support:
     ruby: "no"
     rust: "no"
   beta-header-passthrough:
-    dotnet: "no"
+    dotnet: "yes"
     go: "yes"
     java: "yes"
     js: "yes"

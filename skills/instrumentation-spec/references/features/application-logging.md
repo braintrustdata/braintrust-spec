@@ -215,38 +215,38 @@ category: Tracing
 support:
   # Severity methods and structured bodies.
   severity-helpers:
-    dotnet: "unknown"
+    dotnet: "no"
     go: "yes"
-    java: "unknown"
+    java: "no"
     js: "yes"
     python: "yes"
-    ruby: "unknown"
-    rust: "unknown"
+    ruby: "no"
+    rust: "no"
   # Single-record emission and scoped or unscoped trace correlation.
   log-record-emission:
-    dotnet: "unknown"
+    dotnet: "no"
     go: "yes"
-    java: "unknown"
+    java: "partial"
     js: "yes"
     python: "yes"
-    ruby: "unknown"
-    rust: "unknown"
+    ruby: "no"
+    rust: "no"
   # Template parameters and supported native template strings.
   message-templates:
-    dotnet: "unknown"
+    dotnet: "no"
     go: "yes"
-    java: "unknown"
+    java: "no"
     js: "yes"
     python: "yes"
-    ruby: "unknown"
-    rust: "unknown"
+    ruby: "no"
+    rust: "no"
   # Built-in loggers and logging libraries, including console APIs.
   standard-logging-adapter:
-    dotnet: "unknown"
+    dotnet: "no"
     go: "yes"
-    java: "unknown"
+    java: "no"
     js: "yes"
     python: "yes"
-    ruby: "unknown"
-    rust: "unknown"
+    ruby: "no"
+    rust: "no"
 ```

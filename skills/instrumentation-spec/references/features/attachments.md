@@ -309,7 +309,7 @@ category: Multimodal
 providers: ["openai", "anthropic", "google", "bedrock"]
 support:
   external-file-refs:
-    dotnet: "no"
+    dotnet: "partial"
     go: "yes"
     java: "yes"
     js: "yes"
@@ -317,7 +317,7 @@ support:
     ruby: "yes"
     rust: "no"
   inline-base64:
-    dotnet: "no"
+    dotnet: "partial"
     go: "yes"
     java: "yes"
     js: "yes"

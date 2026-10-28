@@ -49,11 +49,11 @@ name: Turn-scoped correlation IDs
 category: Tracing
 support:
   turn-span-id:
-    dotnet: "unknown"
-    go: "unknown"
-    java: "unknown"
-    js: "unknown"
-    python: "unknown"
-    ruby: "unknown"
-    rust: "unknown"
+    dotnet: "no"
+    go: "no"
+    java: "no"
+    js: "no"
+    python: "no"
+    ruby: "no"
+    rust: "no"
 ```

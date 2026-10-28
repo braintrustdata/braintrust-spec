@@ -786,7 +786,7 @@ category: Datasets
 support:
   dataset-version-contracts:
     dotnet: "no"
-    go: "no"
+    go: "partial"
     java: "no"
     js: "yes"
     python: "partial"

@@ -383,7 +383,7 @@ name: Distributed Tracing
 category: Tracing
 support:
   w3c-context-propagation:
-    dotnet: "no"
+    dotnet: "partial"
     go: "yes"
     java: "yes"
     js: "yes"
@@ -391,7 +391,7 @@ support:
     ruby: "no"
     rust: "no"
   cross-process-parent:
-    dotnet: "no"
+    dotnet: "partial"
     go: "yes"
     java: "yes"
     js: "yes"

@@ -353,11 +353,11 @@ name: Multimodal API surfaces
 category: Multimodal
 support:
   multimodal-api-surfaces:
-    dotnet: "partial"
+    dotnet: "no"
     go: "partial"
     java: "partial"
     js: "partial"
     python: "partial"
-    ruby: "partial"
+    ruby: "no"
     rust: "no"
 ```
