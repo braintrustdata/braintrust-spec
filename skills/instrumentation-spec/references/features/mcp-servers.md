@@ -3,7 +3,9 @@
 This spec defines Braintrust instrumentation for Model Context Protocol (MCP) server libraries.
 It applies across languages, server abstractions, and transports.
 The integration API and the mechanism used to observe incoming requests and outgoing responses are implementation-specific.
-Span naming, kinds, attributes, context propagation, and error classification follow the [OpenTelemetry MCP semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md), which are currently in development.
+Span naming, kinds, attributes, and error classification follow the [OpenTelemetry MCP server semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md#server).
+Context propagation follows the accompanying [MCP context propagation conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md#context-propagation).
+These conventions are currently in development.
 This document defines their mapping to Braintrust rows and the Braintrust-specific payload, provenance, and cancellation fields.
 
 ## Scope
