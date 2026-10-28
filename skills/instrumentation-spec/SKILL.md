@@ -1,6 +1,6 @@
 ---
 name: instrumentation-spec
-description: Implement and review Braintrust SDK instrumentation for LLM providers and agent frameworks. Use when adding or changing traced span structure, captured inputs and outputs, tool calls, metadata, metrics, streaming behavior, attachments, token caching, or other behavior governed by the Braintrust instrumentation specification.
+description: Implement and review Braintrust SDK instrumentation for LLM providers, agent frameworks, and MCP server libraries. Use when adding or changing traced span structure, captured inputs and outputs, tool calls, metadata, metrics, streaming behavior, attachments, token caching, or other behavior governed by the Braintrust instrumentation specification.
 ---
 
 # Braintrust Instrumentation Specification

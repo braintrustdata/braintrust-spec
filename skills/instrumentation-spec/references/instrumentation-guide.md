@@ -8,6 +8,7 @@ This guide covers:
 
 - **LLM provider APIs** — direct calls to OpenAI, Anthropic, Google (Gemini), and other model providers
 - **Framework integrations** — LangChain, Vercel AI SDK, LiteLLM, agent frameworks, and similar
+- **MCP server libraries** — server-side request and notification processing, including tool calls, prompt retrievals, and resource reads, specified in [MCP server instrumentation](features/mcp-servers.md)
 - **Application logging** — explicit severity methods and opt-in adapters, specified in [Application logging](features/application-logging.md)
 
 It also covers explicit capture APIs for operations excluded from
