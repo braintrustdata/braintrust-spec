@@ -2,7 +2,7 @@
 
 This spec defines Braintrust instrumentation for Model Context Protocol (MCP) server libraries.
 It applies across languages, server abstractions, and transports.
-The integration API and the mechanism used to observe incoming requests and outgoing responses are implementation-specific.
+The integration API and the mechanism used to observe incoming requests, outgoing responses, and notifications are implementation-specific.
 Span naming, kinds, attributes, and error classification follow the [OpenTelemetry MCP server semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md#server).
 Context propagation follows the accompanying [MCP context propagation conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md#context-propagation).
 These conventions are currently in development.
@@ -17,9 +17,10 @@ Instrument server-side processing of incoming MCP requests, including:
 - `resources/read`: read resource contents.
 
 Discovery, initialization, ping, subscription requests, and custom request methods are also eligible where supported by the protocol version and server library.
-Incoming notifications also produce server spans for their processing, without a request ID or an expected JSON-RPC response.
+Incoming notifications also produce spans for their processing, without a request ID or an expected JSON-RPC response.
 A notification MAY additionally update an existing request span, for example when a request is cancelled.
-Responses to server-initiated requests MUST NOT create new server spans.
+Outgoing notifications produce their own spans; when the server library associates one with a request, the notification span SHOULD be a child of that request span.
+Responses to server-initiated requests MUST NOT create new operation spans.
 Client-side MCP instrumentation is outside the scope of this spec.
 The [auto-instrumentation eligibility rules](../instrumentation-guide.md#auto-instrumentation-eligibility) still apply: task submission and separate polling or retrieval lifecycles MUST NOT be auto-instrumented.
 For subscriptions, capture only the request and its response; do not keep a span open for subsequent notifications or the subscription lifetime.
@@ -47,7 +48,7 @@ End each span at most once and release its pending correlation state on every te
 | `prompts/get` | `function` | `prompts/get <prompt name>`; `prompts/get` if unavailable | Prompt arguments |
 | `resources/read` | `function` | `resources/read` | `{ "uri": <requested URI> }` |
 | Other eligible request methods | `function` | The MCP method | Omitted unless an explicit capture contract permits it |
-| Notifications | `function` | The MCP method | Omitted unless an explicit capture contract permits it |
+| Notifications | `function` | The MCP method | Sanitized notification parameters when the integration's capture setting permits them |
 
 Names follow `<method> <target>` when a low-cardinality tool or prompt name is available, and `<method>` otherwise.
 Resource URIs MUST NOT appear in span names by default; integrations MAY offer an explicit opt-in to include them.
@@ -58,8 +59,8 @@ Do not capture the full request envelope, transport headers, or authentication c
 Translate allowlisted protocol `_meta` fields as specified below; do not copy the raw `_meta` object.
 
 By default, the operation span MUST use valid trace context extracted from MCP `params._meta` as its remote parent, or start a new trace if none is available.
-OTel integrations SHOULD link the ambient context, such as an HTTP server span, when present and distinct from the MCP parent.
-The transport context MUST NOT replace the MCP parent by default: one HTTP stream can carry multiple MCP operations, and a single MCP operation can span multiple HTTP requests.
+An implementation MAY offer an explicit option to use or link ambient transport context, such as an HTTP server span.
+Without that option, transport context MUST NOT become the operation span's parent: one HTTP stream can carry multiple MCP operations, and a single MCP operation can span multiple HTTP requests.
 Apply the same extraction rules to notifications.
 The operation span MUST be active during processing, including validation, dispatch, and handler execution, so nested LLM calls, tool calls, and manual spans become its children.
 Concurrent requests MUST keep independent active contexts.
@@ -126,8 +127,7 @@ Omit missing or incorrectly typed fields rather than stringifying objects or cop
 
 ## Content capture
 
-Following OTel's opt-in content capture policy, instrumentation MUST NOT capture tool arguments, prompt argument values, resource contents, or result payloads by default.
-An explicit user setting MUST enable this capture; the setting's API is implementation-specific.
+Content capture is implementation-specific. Integrations SHOULD document their default and provide a setting to disable capture.
 When enabled, use the `input` shapes above and the `output` shapes below, with the existing attachment and span customization rules.
 Disabling content capture leaves span identity, timing, allowlisted metadata, and error classification available.
 For returned tool errors, do not extract content text into `error` when content capture is disabled; use a generic message instead.
@@ -255,8 +255,9 @@ SDK implementations SHOULD cover:
 - Cancellation sets `mcp.cancelled` without an error or OTel error status for cancellation alone; ignored or late cancellations do not change completed outcomes, and notification-processing spans remain distinct.
 - Cancellation, connection closure, and response races end affected spans at most once and release pending state.
 - Allowlisted protocol `_meta` fields are translated while unknown keys and raw `_meta` are omitted; structured application data and content order are preserved.
-- Valid incoming `_meta` trace context establishes parentage and routing; ambient transport context is linked, missing/invalid MCP context starts a new trace by default, and response context does not reparent the span.
-- Content capture is disabled by default; enabling it produces the specified Braintrust payloads, and optional OTel content attributes obey the same capture and sanitization settings.
+- Valid incoming `_meta` trace context establishes parentage and routing; when it is absent or invalid, start a new trace by default, and response context does not reparent the span.
+- Content capture follows the integration's documented setting; optional OTel content attributes obey the same capture and sanitization settings.
+- Outgoing notifications produce function spans and may be children of associated request spans; incoming notification spans remain distinct from any cancelled request span.
 - Inline and nested media follow attachment rules, including disabled capture and conversion failures, without mutating results or fetching resource links.
 - Actual MCP session IDs are recorded when available; connection identifiers are not substituted for absent sessions.
 - Transport attributes distinguish stdio (`pipe`) and HTTP (`tcp` or `quic`, with the actual HTTP version).
