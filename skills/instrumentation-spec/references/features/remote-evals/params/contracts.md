@@ -172,7 +172,7 @@ See the [Dev Server specification](../server/specification.md) for the full SSE 
 
 ## References
 
-- [Braintrust: Remote evals guide](https://www.braintrust.dev/docs/evaluate/remote-evals)
+- [Braintrust: Remote evals guide](https://docs.braintrust.dev/evaluate/remote-evals)
 - [Dev Server specification](../server/specification.md) — full `POST /eval` and `GET /list` schemas
 
 # SDK support
