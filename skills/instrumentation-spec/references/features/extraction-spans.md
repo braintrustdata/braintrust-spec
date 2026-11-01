@@ -204,7 +204,7 @@ support:
     go: "no"
     java: "no"
     js: "yes"
-    python: "unknown"
+    python: "no"
     ruby: "no"
     rust: "no"
   typed-fields-and-answers:
@@ -212,7 +212,7 @@ support:
     go: "no"
     java: "no"
     js: "yes"
-    python: "unknown"
+    python: "no"
     ruby: "no"
     rust: "no"
   source-offsets:
@@ -220,7 +220,7 @@ support:
     go: "no"
     java: "no"
     js: "yes"
-    python: "unknown"
+    python: "no"
     ruby: "no"
     rust: "no"
   estimates-and-forecasts:
@@ -228,7 +228,7 @@ support:
     go: "no"
     java: "no"
     js: "yes"
-    python: "unknown"
+    python: "no"
     ruby: "no"
     rust: "no"
   multimodal-input:
@@ -236,7 +236,7 @@ support:
     go: "no"
     java: "no"
     js: "yes"
-    python: "unknown"
+    python: "no"
     ruby: "no"
     rust: "no"
   token-usage:
@@ -244,7 +244,7 @@ support:
     go: "no"
     java: "no"
     js: "yes"
-    python: "unknown"
+    python: "no"
     ruby: "no"
     rust: "no"
 ```
