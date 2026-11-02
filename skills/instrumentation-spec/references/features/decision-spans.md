@@ -23,15 +23,21 @@ Each answer contains `id`, `type`, and the corresponding result fields below.
 | `choice`  | Object mapping choice keys to JSON values                              | `choice`: string                | `probabilities`, `confidence`           |
 | `score`   | Ordered array of at least two JSON values describing score levels      | `score`: finite number          | `legend`, `probabilities`, `confidence` |
 | `box`     | Not accepted                                                          | `box`: object with four edges   | `confidence`: number in [0, 1] or `null`, `image_path`: string |
+| `refusal` | Not a question type; answers a question of any type                    | —                               | —                                       |
 
 `probabilities` maps choice keys or score-level keys to numbers in [0, 1]; numeric `confidence` is also a number in [0, 1].
 `legend` maps score-level keys to JSON values.
 Instrumentation SHOULD preserve these optional fields when returned, including per-answer confidence supplied separately in provider metadata.
 Do not fabricate missing confidence, distributions, or legends.
 
-Preserve `noul` answers as numeric `noul` values; `boolean` answers use numeric `probability` values.
+Instrumentation SHOULD record yes/no questions as `boolean`, with the answer's numeric `probability`, including for providers that call them predicates or Noul questions.
+`noul` remains valid for compatibility with existing traces; preserve `noul` answers as numeric `noul` values.
 A `score` answer is on the question's rubric scale and may be fractional; it MUST NOT be normalized into a Braintrust evaluation score.
 Question answers remain in `output.answers` and do not automatically populate top-level `scores` or `classifications`.
+
+A `refusal` answer records that the model declined to answer one question, while other questions in the same call can still receive answers.
+It has only `id` and `type: "refusal"`, whatever the question's type, and carries no result fields.
+Keep refusals in `output.answers`; do not drop them, fabricate a result, or record the call as an error.
 
 The guide's usual timing, error, provenance, and data-capture rules apply.
 Record model/provider in `metadata` and reported token usage in the standard token metrics.
@@ -360,6 +366,14 @@ support:
     ruby: "no"
     rust: "no"
   rubric-scores:
+    dotnet: "no"
+    go: "no"
+    java: "no"
+    js: "yes"
+    python: "yes"
+    ruby: "no"
+    rust: "no"
+  refusal-answers:
     dotnet: "no"
     go: "no"
     java: "no"
