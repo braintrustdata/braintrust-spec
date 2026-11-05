@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "valid": [
+    {
+      "name": "append-compaction-fork",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 2, "parts": [{"literal": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}]}]},
+        {"id": "00000000000000000000000000000002", "length": 4, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}}, {"literal": [{"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}, {"role": "user", "content": "U"}]}]},
+        {"id": "00000000000000000000000000000003", "length": 4, "parts": [{"literal": [{"role": "system", "content": "Summary"}]}, {"slice": {"id": "00000000000000000000000000000002", "start": 2, "end": 4}}, {"literal": [{"role": "user", "content": "U"}]}]},
+        {"id": "00000000000000000000000000000004", "length": 3, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}}, {"literal": [{"role": "system", "content": "Summary"}]}]}
+      ],
+      "expected": {
+        "00000000000000000000000000000001": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}],
+        "00000000000000000000000000000002": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}, {"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}, {"role": "user", "content": "U"}],
+        "00000000000000000000000000000003": [{"role": "system", "content": "Summary"}, {"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}, {"role": "user", "content": "U"}, {"role": "user", "content": "U"}],
+        "00000000000000000000000000000004": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}, {"role": "system", "content": "Summary"}]
+      }
+    },
+    {
+      "name": "reorder-duplicate-and-truncate",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 3, "parts": [{"literal": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}, {"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}]}]},
+        {"id": "00000000000000000000000000000002", "length": 4, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 2, "end": 3}}, {"slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 2}}, {"slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 2}}, {"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 1}}]},
+        {"id": "00000000000000000000000000000003", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 1}}]}
+      ],
+      "expected": {
+        "00000000000000000000000000000001": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}, {"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}],
+        "00000000000000000000000000000002": [{"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}, {"role": "user", "content": "U"}, {"role": "user", "content": "U"}, {"role": "system", "content": "S"}],
+        "00000000000000000000000000000003": [{"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}]
+      }
+    },
+    {
+      "name": "empty-array-and-opaque-reference-shaped-data",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 0, "parts": []},
+        {"id": "00000000000000000000000000000002", "length": 4, "parts": [{"literal": [{"slice": {"id": "application-data", "start": 0, "end": 99}}, null, {"large": 9007199254740993}, {"content": {"type": "braintrust_attachment", "key": "opaque"}}]}]},
+        {"id": "00000000000000000000000000000003", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 0}}, {"slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 1}}]}
+      ],
+      "expected": {
+        "00000000000000000000000000000001": [],
+        "00000000000000000000000000000002": [{"slice": {"id": "application-data", "start": 0, "end": 99}}, null, {"large": 9007199254740993}, {"content": {"type": "braintrust_attachment", "key": "opaque"}}],
+        "00000000000000000000000000000003": [{"slice": {"id": "application-data", "start": 0, "end": 99}}]
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "missing-base",
+      "definitions": [
+        {"id": "00000000000000000000000000000002", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 1}}]}
+      ],
+      "error": "missing sequence"
+    },
+    {
+      "name": "out-of-bounds",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
+        {"id": "00000000000000000000000000000002", "length": 2, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}}]}
+      ],
+      "error": "out-of-bounds"
+    },
+    {
+      "name": "reversed-range",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
+        {"id": "00000000000000000000000000000002", "length": 0, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 0}}]}
+      ],
+      "error": "out-of-bounds"
+    },
+    {
+      "name": "negative-index",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
+        {"id": "00000000000000000000000000000002", "length": 0, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": -1, "end": 0}}]}
+      ],
+      "error": "invalid index"
+    },
+    {
+      "name": "boolean-index",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
+        {"id": "00000000000000000000000000000002", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": false, "end": 1}}]}
+      ],
+      "error": "invalid index"
+    },
+    {
+      "name": "fractional-index",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
+        {"id": "00000000000000000000000000000002", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 1.0}}]}
+      ],
+      "error": "invalid index"
+    },
+    {
+      "name": "unsafe-integer-index",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
+        {"id": "00000000000000000000000000000002", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 9007199254740992}}]}
+      ],
+      "error": "invalid index"
+    },
+    {
+      "name": "wrong-length",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 2, "parts": [{"literal": [{"role": "user", "content": "U"}]}]}
+      ],
+      "error": "length mismatch"
+    },
+    {
+      "name": "self-cycle-empty-slice",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 0}}]}
+      ],
+      "error": "cycle"
+    },
+    {
+      "name": "mutual-cycle",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 0}}]},
+        {"id": "00000000000000000000000000000002", "length": 0, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 0}}]}
+      ],
+      "error": "cycle"
+    },
+    {
+      "name": "ambiguous-part-tag",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"literal": [], "slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 0}}]}
+      ],
+      "error": "invalid part"
+    },
+    {
+      "name": "zero-id",
+      "definitions": [
+        {"id": "00000000000000000000000000000000", "length": 0, "parts": [{"literal": []}]}
+      ],
+      "error": "zero ID"
+    },
+    {
+      "name": "uppercase-id",
+      "definitions": [
+        {"id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "length": 0, "parts": [{"literal": []}]}
+      ],
+      "error": "invalid ID"
+    },
+    {
+      "name": "duplicate-definition",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"literal": []}]},
+        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"literal": []}]}
+      ],
+      "error": "duplicate definition"
+    },
+    {
+      "name": "unknown-definition-member",
+      "definitions": [
+        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"literal": []}], "extra": true}
+      ],
+      "error": "invalid definition"
+    }
+  ]
+}
