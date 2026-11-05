@@ -12,8 +12,8 @@ Repeatedly transmitting and storing that array is unnecessary when most elements
 already occur in another input. Version 1 represents an immutable array as a
 concatenation of literal elements and slices of previously defined arrays.
 
-Only arrays have identities. Individual messages need neither IDs nor content
-hashes. A reference identifies an immutable array and a half-open index range;
+Only arrays have wire identities. Individual messages need no wire IDs or content
+hashes; producers can keep local fingerprints to find reusable slices. A reference identifies an immutable array and a half-open index range;
 its meaning is independent of timestamps, arrival order, and span updates.
 
 This protocol applies to SDKs, coding-agent translators, gateway reporting, and
@@ -53,8 +53,8 @@ to equal arrays. Servers MAY internally deduplicate equal values while retaining
 these distinct public identities. Object member order is irrelevant when comparing
 definitions; number tokens and string values MUST retain their accepted JSON
 precision and meaning. This comparison MUST NOT round numbers through a less
-precise numeric representation. No producer-side canonicalization or digest
-algorithm is part of v1.
+precise numeric representation. No canonicalization or digest algorithm is required
+on the wire; the local matching profile below does not change sequence identity.
 
 ## Definition grammar and evaluation
 
@@ -319,9 +319,10 @@ Receivers MUST NOT silently replace a missing history with an empty/partial inpu
 1. Capture the complete logical event in its existing in-memory form. Apply
    content-capture policy, sampling, customizers/redaction, provider mapping, and
    attachment processing before deciding which accepted values can be shared.
-2. Compare explicitly recognized arrays against retained immutable histories.
-   Choose slices plus literal new values when that is smaller; otherwise choose
-   literals. A changed message is a new literal, not a mutation to an old one.
+2. Fingerprint explicitly recognized arrays and compare them against cached ordered
+   fingerprints using the matching profile below, or use trustworthy native change
+   information. Choose slices plus literal new values when that is smaller; otherwise
+   choose literals. A changed message is a new literal, not a mutation to an old one.
 3. Queue the reporting envelope for asynchronous delivery. Retain the intended
    full logical row values, or a complete recoverable dependency closure, until
    its request is acknowledged or definitively fails. A cache alone is not a
@@ -352,53 +353,129 @@ tracks its own acknowledgement; acceptance by one route does not acknowledge
 another. A resumed session reuses states only within the same destination/trace
 scope and when their availability is established.
 
-### Client memory and durable resumption
+### Client matching with ordered fingerprints
 
-A producer need not track the original storage location of every message. The
-most recent sequence ID and its length address any unchanged range of that
-sequence, even when the receiver assembled it from many older sequences. For
-ordinary linear histories, locator metadata is constant-size per active history;
-branches may retain additional roots within the same bounded cache.
+The recommended general-purpose client cache entry is:
 
-Locating reusable ranges is a separate cost. A generic wrapper receiving a complete
-new array must compare it with a retained immutable previous value, or use another
-reliable source of change information. Keeping the previous value costs memory
-proportional to the current history, not merely its ID. Retaining every prior
-expanded input is unnecessary. Reference equality on mutable application objects
-is not evidence of unchanged content. Fingerprints may accelerate matching but
-must not silently change the required fidelity of captured values.
+```text
+MatchingEntry = {scope, sequence_id, length, serializer_version,
+                 fingerprints: PackedDigestArray, availability}
+Digest        = SHA-256(domain_separator || encoded_element)
+availability  = acknowledged | queued_with_recoverable_dependencies
+```
 
-An SDK receiving explicit append/replace operations can derive slices directly
-without rescanning old messages. A wrapper receiving only full arrays may scan
-the previous/current arrays for common prefix and suffix ranges. Repeating such
-scans across growing histories can still have quadratic cumulative CPU cost even
-when reporting bytes are small; the protocol does not remove that work by itself.
+`fingerprints[i]` describes element `i` of that exact immutable sequence. The
+cache is local and scoped to the reporting destination, trace, and explicitly
+recognized array. Producers may retain a bounded set of candidate roots for
+branches; they need not mirror the server's sequence tree or track the original
+storage location of each message. An acknowledged entry needs no old message
+contents for matching: any run of matching fingerprints supplies slice indexes
+into its named sequence, regardless of that sequence's wire ancestry.
 
-SDKs MUST bound optional matching-cache bytes and entries across active histories,
-with eviction and a literal fallback. They MUST NOT depend on local disk or remote
-reads to construct live reports. On cache eviction or process restart, the next
-complete observed input can establish a fresh literal root. If only incremental
-changes are available and their base is lost, the producer must obtain a complete
-state from its source or report the loss explicitly; inventing a root is invalid.
+For this local profile, use domain separator UTF-8 `braintrust.history.element.v1`
+followed by a zero byte. `encoded_element` is the complete lossless UTF-8 JSON
+serialization of the captured element after redaction, provider mapping, and
+attachment conversion. The producer MUST fingerprint a frozen captured value,
+not a mutable application object that may change before queueing. The serializer
+must preserve all captured fields and numeric precision; hashing a subset,
+normalized display text, or only role/content fields is invalid. Cache entries
+must be invalidated when the serializer/profile changes. A changed object-key
+order or another harmless encoding variation may miss reuse and send literals;
+it must not hide a changed captured value. Cross-language canonicalization is
+unnecessary because only the producer compares these private digests.
 
-Matching caches and pending delivery have different lifetimes. Eviction MUST NOT
-remove data needed to retry or repair an unacknowledged request. Queued roots may
-share immutable segments, retaining one copy of unchanged contents rather than
-one expanded history per pending span. Acknowledged obsolete roots can be released
-when no cache entry or queued report needs them. Existing queue bounds and loss
-reporting continue to apply; this protocol adds no unbounded offline buffer.
+Equality inferred from SHA-256 assumes cryptographic collision resistance. The
+receiver cannot independently verify the producer's intended new input from a
+slice alone. This assumption MUST be explicit: fingerprints are neither exact
+mathematical equality proofs nor integrity checks performed by the receiver.
+Implementations requiring collision-free comparison must use retained immutable
+values or trustworthy native change information instead. A short/noncryptographic
+hash alone is insufficient for this matching profile.
 
-Coding-agent implementations MAY persist encoder roots, dependency definitions,
-and pending request/receipt information in their existing SQLite store. Journal
-positions may locate source data during recovery, but are not network sequence
-IDs. A reference to journal data is sufficient only when it can reproduce the
-exact post-transformation reporting value; otherwise pending values must be
-retained in SQLite. Source reconstruction positions remain session-bound, while
-remote acceptance is tracked per destination route. No extra files are required.
-On restart, recovery can restore a bounded active working set or choose a fresh
-literal root for the next complete input. Capture acknowledgement remains
-independent of that recovery. Live matching uses the event and retained in-memory
-state; it does not read old journal records on demand.
+A bounded matching algorithm is:
+
+1. Fingerprint the current captured array in order. The cache length MUST equal
+   its fingerprint count. If no valid candidate exists, emit literals.
+2. For a candidate parent, index its fingerprints by their array positions. Find
+   a matching contiguous run by considering equal-digest positions and extending
+   each candidate while consecutive fingerprints match. Bound total candidate
+   and extension work; on budget exhaustion use a matched run already found,
+   or literals. An index with many duplicate digests MUST NOT cause unbounded
+   pairwise matching. For reproducibility, prefer the longest run found, then
+   the lowest parent start, then the lowest current start.
+3. For a run of length `k` at parent index `i` and current index `j`, emit
+   `literal(current[0:j]) + slice(parent, i, i+k) + literal(current[j+k:])`,
+   omitting empty parts. Append, replacement, and truncation are special cases.
+   More than one run MAY be used if ranges in the current array do not overlap
+   and the resulting parts preserve every current occurrence in order.
+4. Compare the encoded size with a literal definition; use literals if the
+   references do not save bytes. Cache the resulting sequence ID and the current
+   ordered fingerprints. Never guess a compaction reason from matching alone.
+
+For example, cached fingerprints `[h(A), h(B), h(C), h(D)]` for `H` and current
+values `[Summary, C, D, E]` yield a matching run starting at parent index 2 and
+current index 1, of length 2. Send `literal([Summary]) + slice(H, 2, 4) +
+literal([E])`. No old contents are required. Common-prefix/suffix matching alone
+would miss this compaction followed by append; a bounded run search handles it.
+Duplicate messages can create several valid runs; the selected positions must
+still reconstruct the entire current array, including duplicate occurrences.
+
+The persistent cache cost is proportional to the number of messages, with one
+fixed-size digest per element plus root metadata, rather than all message bytes
+or every historical input. The temporary position index is also linear in the
+candidate's element count. SDKs MUST bound matching-cache bytes/entries and
+matching work across active histories. Eviction falls back to a fresh literal
+root for the next complete input, with no database lookup or local disk access.
+Fingerprinting a complete input still scans its serialized content on each call;
+cumulative CPU can remain quadratic for growing full-history requests. Small
+messages may make fingerprints relatively expensive; caching is optional.
+
+An optional append-only profile retains just the sequence ID, length, and a digest
+of the whole sequence. With zero-terminated domain separator
+`braintrust.history.sequence.v1`, define `head(0) = SHA-256(domain)` and
+`head(k+1) = SHA-256(domain || head(k) || element_digest[k])`. This chain can be
+continued from the saved head when a source provides trustworthy append operations.
+Compute the head for the corresponding prefix of the current input; on a match,
+send a prefix slice plus new literals. A mismatch falls back to literals. This
+uses constant retained matching metadata, but does not discover arbitrary retained
+runs after compaction and still scans the current prefix. Producers receiving
+trustworthy append/replace operations may update metadata directly without a full
+scan. If only increments are available and their base is lost, obtain complete
+state from the source or report the loss explicitly; do not invent a root.
+
+### Pending delivery and durable resumption
+
+Matching caches and pending delivery have different lifetimes. Fingerprints cannot
+reconstruct missing content. Until a report is acknowledged, retain its intended
+full logical values or a complete recoverable dependency closure for retry/repair.
+Cache eviction MUST NOT remove this data. Queued roots may share immutable segments
+rather than retain one expanded history per pending span. After acknowledgement,
+payloads needed only for matching may be released while retaining fingerprints.
+Existing queue bounds/loss reporting apply; this adds no unbounded offline buffer.
+
+An SDK keeps these caches and pending reports in memory, without requiring disk
+or remote reads. A process restart can establish a fresh literal root from the
+next complete observed input; it cannot recover lost pending data from fingerprints.
+This does not strengthen or weaken the SDK queue's existing durability contract.
+
+Coding-agent implementations MAY persist `(scope, sequence_id, length, serializer_version,
+ordered_fingerprints, availability)` and pending request/receipt information in
+the existing SQLite store. Save each cache entry consistently with its sequence
+identity and fingerprint order; a partial or incompatible entry is discarded.
+Persist only a bounded set of active entries, not a new full fingerprint vector
+for every span. Append new fingerprints and advance the root atomically; update
+replaced ranges on compaction. An implementation may use indexed SQLite rows or
+chunked vectors to avoid rewriting the entire cache on each appended message.
+An acknowledged entry can be restored without replaying old message contents;
+remote retention may still require missing-base repair from the current full
+input. Pending reports require their actual recoverable values, not fingerprints.
+Journal positions may locate source data during recovery only when it reproduces
+the exact post-transformation reporting value; otherwise retain values in SQLite.
+Source reconstruction positions remain session-bound, while acceptance is tracked
+per destination route. No extra files are required. Restore a bounded working set
+or use a fresh literal root; capture acknowledgement remains independent of that
+recovery. Live matching uses current events and in-memory fingerprints without
+reading old journal records on demand.
 
 For gateways updating an exported span, the established owner of canonical input
 retains ownership. The gateway MUST NOT overwrite that input merely to substitute
@@ -540,7 +617,9 @@ usage/cache metrics retain their own meanings.
 
 The executable sequence vectors in `test/history/sequences.json` define append,
 compaction with a retained tail, forks, reordering, duplicate occurrences, and
-invalid dependencies. They exercise array semantics, not an implemented service.
+invalid dependencies. Matching tests use only cached fingerprints and current
+values to derive slices, then independently reconstruct the expected arrays.
+They exercise local encoding/array semantics, not an implemented service.
 Before enabling the protocol, integration tests MUST additionally demonstrate:
 
 - Atomic state/row/receipt commit; replayed receipt after a later row update;
