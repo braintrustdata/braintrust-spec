@@ -1,9 +1,7 @@
 # History sequences
 
-**Status: draft proposal.** This document defines a proposed version 1 protocol,
-not an available endpoint or a change to current SDK defaults. The endpoint names
-below are proposed API contracts. Existing reporting continues to send full inputs
-until both producer and receiver explicitly enable this protocol.
+This document defines version 1 of the history sequence reporting protocol.
+Producers and receivers explicitly negotiate support before using it.
 
 ## Purpose and scope
 
@@ -647,7 +645,6 @@ codec change.
 id: history-sequences
 name: History sequences
 category: Tracing
-status: draft
 support:
   sequence-history-reporting:
     dotnet: "unknown"
