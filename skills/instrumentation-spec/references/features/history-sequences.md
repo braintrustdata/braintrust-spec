@@ -352,6 +352,54 @@ tracks its own acknowledgement; acceptance by one route does not acknowledge
 another. A resumed session reuses states only within the same destination/trace
 scope and when their availability is established.
 
+### Client memory and durable resumption
+
+A producer need not track the original storage location of every message. The
+most recent sequence ID and its length address any unchanged range of that
+sequence, even when the receiver assembled it from many older sequences. For
+ordinary linear histories, locator metadata is constant-size per active history;
+branches may retain additional roots within the same bounded cache.
+
+Locating reusable ranges is a separate cost. A generic wrapper receiving a complete
+new array must compare it with a retained immutable previous value, or use another
+reliable source of change information. Keeping the previous value costs memory
+proportional to the current history, not merely its ID. Retaining every prior
+expanded input is unnecessary. Reference equality on mutable application objects
+is not evidence of unchanged content. Fingerprints may accelerate matching but
+must not silently change the required fidelity of captured values.
+
+An SDK receiving explicit append/replace operations can derive slices directly
+without rescanning old messages. A wrapper receiving only full arrays may scan
+the previous/current arrays for common prefix and suffix ranges. Repeating such
+scans across growing histories can still have quadratic cumulative CPU cost even
+when reporting bytes are small; the protocol does not remove that work by itself.
+
+SDKs MUST bound optional matching-cache bytes and entries across active histories,
+with eviction and a literal fallback. They MUST NOT depend on local disk or remote
+reads to construct live reports. On cache eviction or process restart, the next
+complete observed input can establish a fresh literal root. If only incremental
+changes are available and their base is lost, the producer must obtain a complete
+state from its source or report the loss explicitly; inventing a root is invalid.
+
+Matching caches and pending delivery have different lifetimes. Eviction MUST NOT
+remove data needed to retry or repair an unacknowledged request. Queued roots may
+share immutable segments, retaining one copy of unchanged contents rather than
+one expanded history per pending span. Acknowledged obsolete roots can be released
+when no cache entry or queued report needs them. Existing queue bounds and loss
+reporting continue to apply; this protocol adds no unbounded offline buffer.
+
+Coding-agent implementations MAY persist encoder roots, dependency definitions,
+and pending request/receipt information in their existing SQLite store. Journal
+positions may locate source data during recovery, but are not network sequence
+IDs. A reference to journal data is sufficient only when it can reproduce the
+exact post-transformation reporting value; otherwise pending values must be
+retained in SQLite. Source reconstruction positions remain session-bound, while
+remote acceptance is tracked per destination route. No extra files are required.
+On restart, recovery can restore a bounded active working set or choose a fresh
+literal root for the next complete input. Capture acknowledgement remains
+independent of that recovery. Live matching uses the event and retained in-memory
+state; it does not read old journal records on demand.
+
 For gateways updating an exported span, the established owner of canonical input
 retains ownership. The gateway MUST NOT overwrite that input merely to substitute
 its independently parsed provider request. Gateway-created child spans may encode
