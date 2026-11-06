@@ -143,12 +143,12 @@
       "error": "invalid ID"
     },
     {
-      "name": "duplicate-definition",
+      "name": "conflicting-definition",
       "definitions": [
         {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"literal": []}]},
-        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"literal": []}]}
+        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": ["different"]}]}
       ],
-      "error": "duplicate definition"
+      "error": "conflicting definition"
     },
     {
       "name": "unknown-definition-member",

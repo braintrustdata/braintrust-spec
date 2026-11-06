@@ -35,7 +35,8 @@ are opaque JSON; reference-shaped objects inside them remain ordinary data.
 Sequences form an immutable directed acyclic graph. An ID denotes one definition;
 it MUST NOT be reused for a different definition. Reapplying an identical
 definition is a no-op. Conflicting definitions, cycles, malformed tags, invalid
-indexes, and length mismatches are errors. A frame defines each ID at most once.
+indexes, and length mismatches are errors. Identical definitions may be shared
+by both history fields in one operation.
 
 All references are interpreted within the cache's identity domain, supplied by
 its owner. Reporting domains MUST be isolated by organization, destination, and
@@ -44,51 +45,48 @@ and span parentage keep their existing meanings; neither determines sequence
 ancestry. Separate domains can share a sequence's contents only by copying them
 under new local IDs.
 
-## Encoded values and update frames
+## History fields on span operations
 
-A sequence reference occurs directly in the encoded value that contains it.
-There are no span-specific bindings, field paths, or placeholder replacement rules:
+Add two optional fields to the span row carried by an existing SpanOp:
 
 ```text
-Value = { literal: JsonValue }
-      | { object: { string: Value } }
-      | { array: SequenceId }
-Frame = { sequences: Sequence[], values: Value[] }
+input_history?: Sequence
+output_history?: Sequence
 ```
 
-The alternatives are tagged unions with exactly the shown fields. `literal`
-contains an ordinary complete JSON value. `object` recursively describes its
-members. `array` resolves to the referenced complete array. This wrapper belongs
-to the replication format, not the application payload, so it cannot collide
-with a user's literal object. An encoder can leave an entire value literal when
-sharing its arrays would not help. Empty arrays, missing fields, and `null` remain
-distinct. A frame can define state without emitting a value (`values: []`).
+`input` and `output` retain their existing full-payload formats. `input_history`
+is a compact representation of an array-valued `input`; `output_history` similarly
+represents an array-valued `output`. Each field contains its own complete sequence
+definition, not a pointer to a separately transmitted definition. SDKs and the
+gateway report the same fields on their ordinary span updates. All other span
+fields, Insert/Merge behavior, and routing remain unchanged.
 
-For example, this frame reports a span whose logical input is two messages:
+For example, the first span reports its initial history in full as literals:
 
 ```json
 {
-  "sequences": [{
+  "id": "span-row-1",
+  "span_id": "span-1",
+  "root_span_id": "trace-1",
+  "input_history": {
     "id": "00000000000000000000000000000001",
     "length": 2,
     "parts": [{"literal": [
       {"role": "system", "content": "Be helpful."},
       {"role": "user", "content": "Hello"}
     ]}]
-  }],
-  "values": [{"object": {
-    "id": {"literal": "span-row-1"},
-    "input": {"array": "00000000000000000000000000000001"}
-  }}]
+  }
 }
 ```
 
-Applying it and reading the value yields the ordinary span object with its full
-`input` array. A later frame can define another array from that sequence:
+The next span carries its own sequence, reusing the first span's history:
 
 ```json
 {
-  "sequences": [{
+  "id": "span-row-2",
+  "span_id": "span-2",
+  "root_span_id": "trace-1",
+  "input_history": {
     "id": "00000000000000000000000000000002",
     "length": 4,
     "parts": [
@@ -98,55 +96,74 @@ Applying it and reading the value yields the ordinary span object with its full
         {"role": "user", "content": "Tell me more"}
       ]}
     ]
-  }],
-  "values": [{"object": {
-    "id": {"literal": "span-row-2"},
-    "input": {"array": "00000000000000000000000000000002"}
-  }}]
+  }
 }
 ```
 
-A compaction can then define `literal([summary]) + slice(second, 2, 4)`; an append
-adds another literal part. A branch references an earlier sequence without
-changing other histories. Explicit compaction events retain their existing event
-metadata; the replication algorithm need not recognize or infer compaction.
+`input_history.id` names the resulting whole input, so later operations can slice
+it without knowing where its individual messages originally came from. A compaction
+can define `literal([summary]) + slice(second, 2, 4)`; an append adds another literal
+part. A branch references an earlier sequence without changing other histories.
+Explicit compaction events keep their ordinary metadata; the replication algorithm
+need not recognize or infer compaction. Output histories can be referenced by later
+input histories only when the actual captured values match.
 
-Frames MUST contain a dependency-closed set of definitions relative to the
-receiving cache. Definitions within a frame may appear in any order. A receiver
-validates the entire frame before exposing its definitions or values. Missing
-state is an error, never an empty or partially reconstructed history. An export
-intended for an empty cache MUST include the complete dependency closure; it can
-instead flatten sequences to literals under fresh IDs.
+### Full and compact payloads
+
+For each `input`/`input_history` or `output`/`output_history` pair:
+
+- Full field only: process the existing JSON payload unchanged. The producer need
+  not assign any sequence IDs. A receiver MAY intern array values locally, but
+  senders cannot reference those private IDs without being given them.
+- Compact field only: its materialized array is the complete logical field value.
+  It replaces the previous value; omitted full payload is not a missing history.
+- Both fields: the materialized compact sequence MUST equal the full field. Reject
+  conflicting values before changing the row or cache. Sending both is permitted
+  for migration/validation but saves no payload bytes.
+- Neither field: retain the existing value under ordinary merge semantics.
+
+A full-field update replaces the field's previous compact association, and a compact
+update replaces its previous full representation. The two are alternative encodings
+of one logical field, not independently merged values. Update that choice with the
+row, not in a separate publication step. Older retained sequences remain immutable
+and available while other spans depend on them. `null`, empty arrays, and omitted
+fields keep their distinct meanings.
+
+The sequence format represents arrays. Arbitrary object/scalar payloads continue
+using ordinary full fields; it does not rewrite provider-native objects through
+placeholder paths. Integrations using compact histories must capture their complete
+array-valued logical input/output under the existing instrumentation contract.
+Provider-native object payloads retain full reporting until a separately specified
+representation preserves all of their fields. No native fields may be discarded
+merely to enable this optimization.
 
 ## Uniform cache interface
 
 Every participant uses the same conceptual interface:
 
 ```text
-intern(array) -> SequenceId
-encode(json_value, known_ids = empty) -> Frame
-apply(frame) -> Value[]
-read(value) -> JsonValue
-export(roots, known_ids = empty) -> Frame
+encode(array) -> Sequence
+apply(sequence) -> SequenceId
+read(sequence_id) -> JsonValue[]
+snapshot(sequence_id) -> Sequence
 unload(sequence_id)
 ```
 
-`intern` registers a captured array, reusing matching ranges when beneficial.
-`encode` traverses a captured value, interns selected arrays, and exports its
-encoded value with definitions not already in the target's `known_ids`. `apply` registers
-incoming definitions and returns the encoded values without requiring their full
-arrays to be expanded. `read` reconstructs ordinary JSON. `export` emits the
-roots and their dependency closure, omitting only state known to be available at
-the target. With an empty `known_ids`, it produces a self-contained snapshot.
+`encode` registers a captured array and returns its sequence definition, reusing
+matching ranges when beneficial. The caller attaches that definition directly to
+its SpanOp's history field. `apply` registers an incoming definition without needing
+to expand its full array. `read` materializes that array. `snapshot` returns an
+equivalent all-literal definition under a fresh ID, requiring no earlier state.
+The caller can attach that snapshot to a span and use its new ID for subsequent
+references. A snapshot does not rename old IDs or repair outstanding references to
+them; those dependencies must be retained or their pending operations re-encoded.
+
 `unload` releases resident payloads only when they remain retrievable from storage
 or another retained copy; otherwise it must refuse while retained roots need them.
-
-These are model operations, not prescribed SDK methods or network endpoints.
-Both sender and receiver can intern, apply, read, and export. There is no separate
-client object model or backend object model. Implementations may eagerly or lazily
-materialize sequences, but MUST preserve identical values. Unloaded/unavailable
-content is distinguishable from an empty sequence. Loading data is explicit in
-the storage/transport adapter; matching does not initiate hidden remote reads.
+Missing state is an error, never an empty or partially reconstructed array. Both
+sides use these operations; persistence and transport are separate adapters.
+Implementations may eagerly or lazily materialize data. Loading is explicit in the
+adapter; matching does not initiate hidden remote reads.
 
 ### Finding reusable ranges
 
@@ -162,7 +179,7 @@ before interning. Values MUST be frozen for capture; reference equality on mutab
 application objects is insufficient. Serializer changes invalidate the index.
 Harmless encoding differences can reduce reuse, but omitted captured fields or
 lossy numeric conversion must not hide a changed value. Fingerprints are internal
-matching metadata, not message identities sent in frames. Matching assumes SHA-256
+matching metadata, not message identities sent in span operations. Matching assumes SHA-256
 collision resistance; applications requiring collision-free equality must compare
 retained values or use trustworthy source change information instead.
 
@@ -197,54 +214,59 @@ state or report the loss; fingerprints alone cannot recover content.
 
 ## Replication, persistence, and lifetime
 
-Transport and storage are adapters around frames. A network stream can transmit
-them; a persistence adapter can record the same frames and replay them into a fresh
-cache. Framing, authentication, acknowledgements, and storage layout belong to
-those adapters, not this object model.
+The SpanOp itself carries the new history state. A network stream sends span
+operations; persistence records the same operations and replays their history
+fields into the same cache. Batching, authentication, acknowledgements, and storage
+layout belong to existing adapters, not a second history envelope or value stream.
 
-An adapter must preserve these rules:
+Adapters must preserve these rules:
 
-- Send definitions before dependent values, either within a validated frame or
-  after successful delivery of prerequisite frames. A durable progress cursor may
-  establish which state has been accepted; queueing alone does not establish that.
-- Repeated sequence definitions are idempotent. Emitted values are ordinary span
-  updates, not automatically deduplicated commands. The enclosing reporting system
-  retains its existing ordering, retry, merge, and acknowledgement semantics.
-- An interrupted/incomplete frame exposes no new values. Durable progress advances
-  only after the corresponding frame is recoverable. Replay resumes from that
-  progress with its required cache state, or from a self-contained export.
-- Retain enough actual content to retry/repair pending updates. Fingerprints cannot
-  substitute for that content. Metadata and payloads may be unloaded independently,
-  but an acknowledged state must remain reconstructable while retained values need
-  it. Missing dependencies must be restored or replaced by a self-contained export.
-- Release unused roots and garbage-collect unreachable data under existing retention
-  rules. Deleting a source span must not break another retained span's history.
-  Compaction changes a new array; it does not erase older retained values. Existing
-  authorization and explicit content-erasure policies also apply to shared data.
+- A referenced sequence is available before a dependent operation is exposed.
+  Operations in a batch may be resolved in dependency order; otherwise restore
+  missing source operations or re-encode pending arrays as all-literal snapshots.
+  Successfully queueing an operation does not establish remote acceptance.
+- Validate the history definitions and full/compact consistency before exposing
+  the corresponding row change or advancing durable progress. Cross-references
+  between history fields in the same operation must resolve without a cycle.
+- Repeated definitions are idempotent. Span operations retain their existing
+  ordering, merge, retry, and acknowledgement semantics. A replayed definition
+  does not itself suppress or reorder a span operation.
+- Retain actual data needed to retry/repair pending operations. Fingerprints do
+  not substitute for content. Metadata and payloads may be unloaded independently,
+  but retained spans must remain reconstructable. A replay starting with an empty
+  cache must include source dependencies or self-contained snapshot operations.
+- Release unused roots under existing retention rules. Deleting a source span must
+  not break another retained span's history. Compaction changes a new array; it
+  does not erase older retained values. Existing authorization and explicit
+  content-erasure policies apply to shared data too.
 
-An in-memory SDK can keep a bounded matching index and pending values, unload
-acknowledged payloads, and establish new literal roots after cache eviction/restart.
-This gives no durability beyond its existing queue. Coding agents can persist
-frames and active indexes in their existing SQLite/journal storage and restore a
-bounded working set. Persist active fingerprint changes incrementally rather than
-copying every entire vector per span. No extra files or live-path journal reads
-are required. Recovery and outbound replication remain independent of hook capture.
-Each reporting route establishes its own accepted progress.
+An SDK can keep a bounded matching index and pending operations in memory, unload
+acknowledged payloads, and establish new literal roots after eviction/restart.
+This adds no durability beyond its existing queue. Coding agents can persist
+operations and active indexes in their existing SQLite/journal storage and restore
+a bounded working set. Persist active fingerprint changes incrementally rather
+than copying entire vectors per span. No extra files or live-path journal reads
+are required. Recovery/outbound replication remain independent of hook capture;
+each route establishes its own accepted progress.
 
-Backend storage can index shared segments for efficient reads instead of replaying
-all historical frames per query. The model does not prescribe trees, tables, or
-checkpoint frequency. Snapshots/exports and incremental frames describe the same
-state and can be converted without changing materialized span values.
+Backend storage can index shared segments instead of replaying all historical
+operations per query. The model does not prescribe tables, trees, or checkpoint
+frequency. Snapshots and incremental history definitions represent the same arrays
+and can be converted without changing the logical span data.
 
 ## Reporting and queries
 
 Capture remains complete: existing consumers MUST observe the full logical span
-input/output, including when predicates, search, scoring, or exports evaluate it.
-An ordinary query resolves references through the shared cache/storage layer;
-reconstruction must not depend on earlier spans appearing in the result page.
-A compact export can return encoded values plus their dependency-closed definitions
-for a consumer to apply to the same model. Pagination/transport may share known
-state or make each page self-contained; neither changes the representation.
+input/output, whether a row was reported with a full field or its compact history
+field. Predicates, search, scoring, and ordinary exports evaluate the reconstructed
+value. Resolving a history must not depend on its source span appearing in the same
+query page. Legacy rows and compact rows can coexist in one trace.
+
+A compact export returns ordinary spans with their history fields, referencing
+state known to its consumer or substituting self-contained snapshot definitions
+with fresh IDs. This preserves which spans belong to the result set; source spans
+need not be added as extra results. The consumer applies the same history fields
+to the same cache.
 
 The format applies equally to SDKs, coding agents, and gateway-owned spans. Existing
 ownership of exported span inputs remains unchanged. It does not infer that one
@@ -257,10 +279,11 @@ This shared sequence model also expresses compaction and branching explicitly.
 Ordinary OTel output retains its established complete-message format unless its
 consumer supports a compact representation; conversation IDs retain their meaning.
 
-The sequence vectors and cache tests exercise round-trip reconstruction, matching
-without old contents, compaction, branches, duplicates, restart/replay, missing
-state, and invalid ranges. Implementations must additionally validate their actual
-storage/transport crash boundaries and measure matching CPU, queue memory, ingress
+The sequence vectors and cache tests exercise round-trip span reconstruction,
+matching without old contents, compaction, branches, duplicates, mixed full/compact
+updates, restart/replay, missing state, and invalid ranges. Implementations must
+additionally validate storage/transport crash boundaries and measure matching CPU,
+queue memory, ingress
 bytes, physical storage, and query cost. Requesting every expanded history can
 still produce quadratic response bytes; a compact export avoids those repetitions.
 

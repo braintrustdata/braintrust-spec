@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import unittest
+import uuid
 
 
 VECTORS = Path(__file__).resolve().parents[1] / "test/history/sequences.json"
@@ -34,7 +35,9 @@ def resolve(definitions):
             raise ValueError("invalid definition")
         key = identifier(definition["id"])
         if key in by_id:
-            raise ValueError("duplicate definition")
+            if by_id[key] != definition:
+                raise ValueError("conflicting definition")
+            continue
         index(definition["length"])
         if not isinstance(definition["parts"], list):
             raise ValueError("invalid parts")
@@ -122,72 +125,55 @@ def match_parts(parent_id, parent_fingerprints, current, budget=10000):
 
 
 class ExampleCache:
-    """Reference semantics only; storage and reporting are deliberately absent."""
+    """Reference cache plus ordinary row-field projection; not a span sink."""
 
     def __init__(self):
         self.definitions = {}
         self.arrays = {}
+        self.rows = {}
 
-    @staticmethod
-    def decode(value, arrays):
-        if not isinstance(value, dict) or len(value) != 1:
-            raise ValueError("invalid encoded value")
-        if "literal" in value:
-            return copy.deepcopy(value["literal"])
-        if "array" in value:
-            key = identifier(value["array"])
-            if key not in arrays:
-                raise ValueError("missing sequence")
-            return copy.deepcopy(arrays[key])
-        if "object" in value and isinstance(value["object"], dict):
-            return {key: ExampleCache.decode(child, arrays)
-                    for key, child in value["object"].items()}
-        raise ValueError("invalid encoded value")
-
-    def apply(self, frame):
-        if set(frame) != {"sequences", "values"}:
-            raise ValueError("invalid frame")
+    def stage(self, definitions):
         staged = copy.deepcopy(self.definitions)
-        seen = set()
-        for definition in frame["sequences"]:
+        for definition in definitions:
             key = definition["id"]
-            if key in seen:
-                raise ValueError("duplicate definition")
-            seen.add(key)
             if key in staged and staged[key] != definition:
                 raise ValueError("conflicting definition")
             staged[key] = copy.deepcopy(definition)
-        arrays = resolve(list(staged.values()))
-        for value in frame["values"]:
-            self.decode(value, arrays)
+        return staged, resolve(list(staged.values()))
+
+    def apply(self, sequence):
+        self.definitions, self.arrays = self.stage([sequence])
+        return sequence["id"]
+
+    def read(self, key):
+        if key not in self.arrays:
+            raise ValueError("missing sequence")
+        return copy.deepcopy(self.arrays[key])
+
+    def snapshot(self, key):
+        values = self.read(key)
+        return {"id": uuid.uuid4().hex, "length": len(values),
+                "parts": [{"literal": values}] if values else []}
+
+    def apply_op(self, operation):
+        # Register both fields together so either can reference the other.
+        definitions = [operation[field] for field in ("input_history", "output_history")
+                       if field in operation]
+        staged, arrays = self.stage(definitions)
+        materialized = copy.deepcopy(operation)
+        for field in ("input", "output"):
+            history = field + "_history"
+            if history in operation:
+                value = arrays[operation[history]["id"]]
+                if field in operation and json.dumps(operation[field], sort_keys=True) != json.dumps(value, sort_keys=True):
+                    raise ValueError("conflicting full and compact values")
+                materialized.pop(history)
+                materialized[field] = copy.deepcopy(value)
         self.definitions, self.arrays = staged, arrays
-        return copy.deepcopy(frame["values"])
-
-    def read(self, value):
-        return self.decode(value, self.arrays)
-
-    def export(self, roots):
-        needed = set()
-
-        def sequence(key):
-            if key in needed:
-                return
-            needed.add(key)
-            for part in self.definitions[key]["parts"]:
-                if "slice" in part:
-                    sequence(part["slice"]["id"])
-
-        def value(node):
-            if "array" in node:
-                sequence(node["array"])
-            elif "object" in node:
-                for child in node["object"].values():
-                    value(child)
-
-        for root in roots:
-            value(root)
-        return {"sequences": [copy.deepcopy(d) for key, d in self.definitions.items()
-                              if key in needed], "values": copy.deepcopy(roots)}
+        row = copy.deepcopy(self.rows.get(operation["id"], {}))
+        row.update(materialized)
+        self.rows[operation["id"]] = row
+        return copy.deepcopy(row)
 
 
 class HistorySequenceExamples(unittest.TestCase):
@@ -260,65 +246,100 @@ class HistorySequenceExamples(unittest.TestCase):
                          [{"literal": reordered}])
 
 
-    def test_document_frames_replay_over_network_or_storage(self):
+    def test_document_spanops_replay_over_network_or_storage(self):
         spec = VECTORS.parents[2] / (
             "skills/instrumentation-spec/references/features/history-sequences.md"
         )
-        frames = [json.loads(block) for block in re.findall(
+        operations = [json.loads(block) for block in re.findall(
             r"```json\n(.*?)\n```", spec.read_text(), flags=re.DOTALL
         )]
-        sender_view, restored = ExampleCache(), ExampleCache()
-        self.assertEqual(len(frames), 2)
-        for frame in frames:
-            values = sender_view.apply(frame)
-            # The same serialized frame can cross a network or be read from storage.
-            restored_values = restored.apply(json.loads(json.dumps(frame)))
-            self.assertEqual([sender_view.read(v) for v in values],
-                             [restored.read(v) for v in restored_values])
-        self.assertEqual(restored.read(restored_values[0])["input"], [
+        live, restored = ExampleCache(), ExampleCache()
+        self.assertEqual(len(operations), 2)
+        for operation in operations:
+            expected = live.apply_op(operation)
+            self.assertEqual(restored.apply_op(json.loads(json.dumps(operation))), expected)
+        self.assertEqual(restored.rows["span-row-2"]["input"], [
             {"role": "system", "content": "Be helpful."},
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hello!"},
             {"role": "user", "content": "Tell me more"},
         ])
 
-    def test_self_contained_export_restores_compacted_history(self):
+    def test_snapshot_operation_restores_compacted_history(self):
         case = json.loads(VECTORS.read_text())["valid"][0]
-        root = {"array": case["definitions"][2]["id"]}
+        root = case["definitions"][2]["id"]
         cache = ExampleCache()
-        cache.apply({"sequences": case["definitions"], "values": [root]})
+        for definition in case["definitions"]:
+            cache.apply(definition)
+        snapshot = cache.snapshot(root)
+        self.assertNotEqual(snapshot["id"], root)
         restored = ExampleCache()
-        exported = json.loads(json.dumps(cache.export([root])))
-        values = restored.apply(exported)
-        self.assertEqual(restored.read(values[0]), case["expected"][root["array"]])
-        self.assertEqual(len(exported["sequences"]), 3)  # Unrelated branch omitted.
+        row = restored.apply_op(json.loads(json.dumps({
+            "id": "restored", "input_history": snapshot,
+        })))
+        self.assertEqual(row["input"], case["expected"][root])
+        self.assertEqual(len(restored.definitions), 1)
 
     def test_reapplication_and_conflict_are_sequence_operations(self):
         definition = {"id": f"{1:032x}", "length": 1,
                       "parts": [{"literal": ["original"]}]}
-        frame = {"sequences": [definition], "values": [{"array": definition["id"]}]}
         cache = ExampleCache()
-        first = cache.apply(frame)
-        self.assertEqual(cache.apply(frame), first)  # Values still emitted on replay.
-        changed = copy.deepcopy(frame)
-        changed["sequences"][0]["parts"] = [{"literal": ["changed"]}]
+        key = cache.apply(definition)
+        self.assertEqual(cache.apply(definition), key)
+        changed = dict(definition, parts=[{"literal": ["changed"]}])
         with self.assertRaisesRegex(ValueError, "conflicting definition"):
             cache.apply(changed)
-        self.assertEqual(cache.read(first[0]), ["original"])
+        self.assertEqual(cache.read(key), ["original"])
 
-    def test_invalid_value_does_not_expose_partial_frame(self):
-        definition = {"id": f"{1:032x}", "length": 0, "parts": []}
+    def test_missing_history_does_not_expose_partial_operation(self):
+        definition = {"id": f"{1:032x}", "length": 1, "parts": [
+            {"slice": {"id": f"{2:032x}", "start": 0, "end": 1}},
+        ]}
         cache = ExampleCache()
         with self.assertRaisesRegex(ValueError, "missing sequence"):
-            cache.apply({"sequences": [definition],
-                         "values": [{"array": f"{2:032x}"}]})
+            cache.apply_op({"id": "row", "input_history": definition})
         self.assertEqual(cache.definitions, {})
+        self.assertEqual(cache.rows, {})
+
+    def test_legacy_and_compact_updates_share_one_logical_field(self):
+        cache = ExampleCache()
+        cache.apply_op({"id": "row", "input": ["legacy"], "output": ["output"]})
+        definition = {"id": f"{1:032x}", "length": 1,
+                      "parts": [{"literal": ["compact"]}]}
+        row = cache.apply_op({"id": "row", "input_history": definition})
+        self.assertEqual(row["input"], ["compact"])
+        self.assertEqual(row["output"], ["output"])
+        self.assertEqual(cache.apply_op({"id": "row", "input": None})["input"], None)
+        cache.apply_op({"id": "row", "input": ["compact"], "input_history": definition})
+        with self.assertRaisesRegex(ValueError, "conflicting full and compact"):
+            cache.apply_op({"id": "row", "input": ["different"],
+                            "input_history": definition})
+        self.assertEqual(cache.rows["row"]["input"], ["compact"])
+
+    def test_output_history_can_seed_a_later_input(self):
+        cache = ExampleCache()
+        definition = {"id": f"{1:032x}", "length": 1,
+                      "parts": [{"literal": [{"role": "assistant", "content": "A"}]}]}
+        cache.apply_op({"id": "first", "output_history": definition})
+        next_input = {"id": f"{2:032x}", "length": 2, "parts": [
+            {"slice": {"id": definition["id"], "start": 0, "end": 1}},
+            {"literal": [{"role": "user", "content": "B"}]},
+        ]}
+        row = cache.apply_op({"id": "second", "input_history": next_input})
+        self.assertEqual(row["input"], [{"role": "assistant", "content": "A"},
+                                         {"role": "user", "content": "B"}])
+
+    def test_both_history_fields_can_share_one_immutable_definition(self):
+        definition = {"id": f"{1:032x}", "length": 0, "parts": []}
+        row = ExampleCache().apply_op({"id": "row", "input_history": definition,
+                                      "output_history": definition})
+        self.assertEqual(row["input"], [])
+        self.assertEqual(row["output"], [])
 
     def test_literal_reference_shaped_data_and_uint32(self):
-        value = {"literal": {"array": "application data", "nested": [None, []]}}
-        cache = ExampleCache()
-        self.assertEqual(cache.read(cache.apply({"sequences": [], "values": [value]})[0]),
-                         value["literal"])
+        data = {"array": "application data", "nested": [None, []]}
+        row = ExampleCache().apply_op({"id": "row", "input": data})
+        self.assertEqual(row["input"], data)
         self.assertEqual(index(2**32 - 1), 2**32 - 1)
         with self.assertRaisesRegex(ValueError, "invalid index"):
             index(2**32)
