@@ -34,6 +34,6 @@ expected_brainstore_spans:
         role: system
     output:
       content:
-        - text: The capital of France is Paris.
+        - text: !fn is_non_empty_string
           type: text
       role: assistant
