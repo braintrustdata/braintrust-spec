@@ -9,7 +9,8 @@ requests:
     tools:
       - type: web_search_preview
         search_context_size: low
-    # Force a single search so the tool-span shape is deterministic.
+    # Selecting a hosted tool does not limit how many times it can be called.
+    max_tool_calls: 1
     tool_choice:
       type: web_search_preview
     input:
