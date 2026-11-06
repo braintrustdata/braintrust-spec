@@ -35,8 +35,7 @@ are opaque JSON; reference-shaped objects inside them remain ordinary data.
 Sequences form an immutable directed acyclic graph. An ID denotes one definition;
 it MUST NOT be reused for a different definition. Reapplying an identical
 definition is a no-op. Conflicting definitions, cycles, malformed tags, invalid
-indexes, and length mismatches are errors. Identical definitions may be shared
-by both history fields in one operation.
+indexes, and length mismatches are errors.
 
 All references are interpreted within the cache's identity domain, supplied by
 its owner. Reporting domains MUST be isolated by organization, destination, and
@@ -45,21 +44,24 @@ and span parentage keep their existing meanings; neither determines sequence
 ancestry. Separate domains can share a sequence's contents only by copying them
 under new local IDs.
 
-## History fields on span operations
+## History field on span operations
 
-Add two optional fields to the span row carried by an existing SpanOp:
+Add one optional field to the span row carried by an existing SpanOp:
 
 ```text
 input_history?: Sequence
-output_history?: Sequence
 ```
 
-`input` and `output` retain their existing full-payload formats. `input_history`
-is a compact representation of an array-valued `input`; `output_history` similarly
-represents an array-valued `output`. Each field contains its own complete sequence
-definition, not a pointer to a separately transmitted definition. SDKs and the
-gateway report the same fields on their ordinary span updates. All other span
-fields, Insert/Merge behavior, and routing remain unchanged.
+`input` retains its existing full-payload format. `input_history` is a separate,
+compact representation of the complete array-valued input sent to this LLM request:
+retained session messages, compaction/edits, and new messages. It contains its own
+sequence definition, not a pointer to a separately transmitted definition. SDKs
+and the gateway report the same field on their ordinary span updates.
+
+`output` remains unchanged: it contains only this request's response. There is one
+evolving input history. The next request's input includes the previous response only
+when that response was actually included in the captured request. All other span
+fields, Insert/Merge behavior, and routing retain their existing meanings.
 
 For example, the first span reports its initial history in full as literals:
 
@@ -68,6 +70,7 @@ For example, the first span reports its initial history in full as literals:
   "id": "span-row-1",
   "span_id": "span-1",
   "root_span_id": "trace-1",
+  "output": [{"role": "assistant", "content": "Hello!"}],
   "input_history": {
     "id": "00000000000000000000000000000001",
     "length": 2,
@@ -105,12 +108,14 @@ it without knowing where its individual messages originally came from. A compact
 can define `literal([summary]) + slice(second, 2, 4)`; an append adds another literal
 part. A branch references an earlier sequence without changing other histories.
 Explicit compaction events keep their ordinary metadata; the replication algorithm
-need not recognize or infer compaction. Output histories can be referenced by later
-input histories only when the actual captured values match.
+need not recognize or infer compaction. A response first joins the reusable history
+when a subsequent captured input includes it. The example sends that response as
+a new literal while reusing the preceding input; later spans can slice it from
+that new sequence. Outputs are not implicitly appended to input histories.
 
 ### Full and compact payloads
 
-For each `input`/`input_history` or `output`/`output_history` pair:
+For the `input`/`input_history` pair:
 
 - Full field only: process the existing JSON payload unchanged. The producer need
   not assign any sequence IDs. A receiver MAY intern array values locally, but
@@ -132,7 +137,7 @@ fields keep their distinct meanings.
 The sequence format represents arrays. Arbitrary object/scalar payloads continue
 using ordinary full fields; it does not rewrite provider-native objects through
 placeholder paths. Integrations using compact histories must capture their complete
-array-valued logical input/output under the existing instrumentation contract.
+array-valued logical input under the existing instrumentation contract.
 Provider-native object payloads retain full reporting until a separately specified
 representation preserves all of their fields. No native fields may be discarded
 merely to enable this optimization.
@@ -226,8 +231,7 @@ Adapters must preserve these rules:
   missing source operations or re-encode pending arrays as all-literal snapshots.
   Successfully queueing an operation does not establish remote acceptance.
 - Validate the history definitions and full/compact consistency before exposing
-  the corresponding row change or advancing durable progress. Cross-references
-  between history fields in the same operation must resolve without a cycle.
+  the corresponding row change or advancing durable progress.
 - Repeated definitions are idempotent. Span operations retain their existing
   ordering, merge, retry, and acknowledgement semantics. A replayed definition
   does not itself suppress or reorder a span operation.
@@ -257,15 +261,15 @@ and can be converted without changing the logical span data.
 ## Reporting and queries
 
 Capture remains complete: existing consumers MUST observe the full logical span
-input/output, whether a row was reported with a full field or its compact history
-field. Predicates, search, scoring, and ordinary exports evaluate the reconstructed
-value. Resolving a history must not depend on its source span appearing in the same
+input, whether reported with `input` or `input_history`. Output capture and reads
+retain their existing behavior. Predicates, search, scoring, and ordinary exports
+evaluate the reconstructed value. Resolving a history must not depend on its source span appearing in the same
 query page. Legacy rows and compact rows can coexist in one trace.
 
-A compact export returns ordinary spans with their history fields, referencing
+A compact export returns ordinary spans with `input_history` fields referencing
 state known to its consumer or substituting self-contained snapshot definitions
 with fresh IDs. This preserves which spans belong to the result set; source spans
-need not be added as extra results. The consumer applies the same history fields
+need not be added as extra results. The consumer applies those input sequences
 to the same cache.
 
 The format applies equally to SDKs, coding agents, and gateway-owned spans. Existing

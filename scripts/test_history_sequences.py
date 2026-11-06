@@ -156,19 +156,15 @@ class ExampleCache:
                 "parts": [{"literal": values}] if values else []}
 
     def apply_op(self, operation):
-        # Register both fields together so either can reference the other.
-        definitions = [operation[field] for field in ("input_history", "output_history")
-                       if field in operation]
+        definitions = [operation["input_history"]] if "input_history" in operation else []
         staged, arrays = self.stage(definitions)
         materialized = copy.deepcopy(operation)
-        for field in ("input", "output"):
-            history = field + "_history"
-            if history in operation:
-                value = arrays[operation[history]["id"]]
-                if field in operation and json.dumps(operation[field], sort_keys=True) != json.dumps(value, sort_keys=True):
-                    raise ValueError("conflicting full and compact values")
-                materialized.pop(history)
-                materialized[field] = copy.deepcopy(value)
+        if "input_history" in operation:
+            value = arrays[operation["input_history"]["id"]]
+            if "input" in operation and json.dumps(operation["input"], sort_keys=True) != json.dumps(value, sort_keys=True):
+                raise ValueError("conflicting full and compact values")
+            materialized.pop("input_history")
+            materialized["input"] = copy.deepcopy(value)
         self.definitions, self.arrays = staged, arrays
         row = copy.deepcopy(self.rows.get(operation["id"], {}))
         row.update(materialized)
@@ -316,25 +312,34 @@ class HistorySequenceExamples(unittest.TestCase):
                             "input_history": definition})
         self.assertEqual(cache.rows["row"]["input"], ["compact"])
 
-    def test_output_history_can_seed_a_later_input(self):
+    def test_response_joins_history_only_in_the_next_captured_input(self):
         cache = ExampleCache()
+        user = {"role": "user", "content": "Question"}
+        response = {"role": "assistant", "content": "Answer"}
+        next_user = {"role": "user", "content": "Follow-up"}
         definition = {"id": f"{1:032x}", "length": 1,
-                      "parts": [{"literal": [{"role": "assistant", "content": "A"}]}]}
-        cache.apply_op({"id": "first", "output_history": definition})
-        next_input = {"id": f"{2:032x}", "length": 2, "parts": [
+                      "parts": [{"literal": [user]}]}
+        first = cache.apply_op({"id": "first", "input_history": definition,
+                                "output": [response]})
+        self.assertEqual(first["input"], [user])
+        self.assertEqual(first["output"], [response])
+        self.assertEqual(cache.read(definition["id"]), [user])
+        next_input = {"id": f"{2:032x}", "length": 3, "parts": [
             {"slice": {"id": definition["id"], "start": 0, "end": 1}},
-            {"literal": [{"role": "user", "content": "B"}]},
+            {"literal": [response, next_user]},
         ]}
         row = cache.apply_op({"id": "second", "input_history": next_input})
-        self.assertEqual(row["input"], [{"role": "assistant", "content": "A"},
-                                         {"role": "user", "content": "B"}])
+        self.assertEqual(row["input"], [user, response, next_user])
+        self.assertNotIn("output", row)
 
-    def test_both_history_fields_can_share_one_immutable_definition(self):
+    def test_output_keeps_its_existing_payload_format(self):
         definition = {"id": f"{1:032x}", "length": 0, "parts": []}
-        row = ExampleCache().apply_op({"id": "row", "input_history": definition,
-                                      "output_history": definition})
-        self.assertEqual(row["input"], [])
-        self.assertEqual(row["output"], [])
+        for output in (None, "response", {"content": "response"}, ["response"]):
+            with self.subTest(output=output):
+                row = ExampleCache().apply_op({"id": "row", "input_history": definition,
+                                              "output": output})
+                self.assertEqual(row["input"], [])
+                self.assertEqual(row["output"], output)
 
     def test_literal_reference_shaped_data_and_uint32(self):
         data = {"array": "application data", "nested": [None, []]}
