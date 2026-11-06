@@ -46,3 +46,23 @@ config_envars:
     required: false
     env_braintrust: true
     documentation: Optional explicit normalized span origin environment name. When set, SDKs use this value for context.span_origin.environment.name instead of automatic environment detection.
+
+  - name: BRAINTRUST_ENABLE_GIT_METADATA
+    required: false
+    env_braintrust: false
+    type: boolean
+    default: "true"
+    documentation: >-
+      Enables or disables automatic Git metadata collection during experiment
+      initialization. Read from the process environment only; it is
+      intentionally not read from .env.braintrust. Missing, empty, or
+      whitespace-only values are unset. Other values are trimmed and compared
+      case-insensitively: "true" and "1" are enabled, "false" and "0" are
+      disabled. Any other value is invalid, is treated as unset, and must not
+      throw (SDKs should warn at most once). Unset or enabled preserves the
+      organization/default behavior and never forces collection on or permits
+      extra fields. Disabled, when the caller passes no explicit Git metadata
+      collection option, skips repository metadata and ancestor discovery and
+      starts zero Git subprocesses. Explicit caller collection options take
+      precedence, and organization policy is always the ceiling. See
+      skills/instrumentation-spec/references/features/experiment-git-metadata.md.

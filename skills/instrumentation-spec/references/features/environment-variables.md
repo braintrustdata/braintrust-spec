@@ -37,6 +37,11 @@ configuration.
 The `.env.braintrust` fallback is an extra source only for environment variables
 explicitly allowlisted by this spec.
 
+Some settings are also capped by server-side organization policy, which no
+caller option or environment value can exceed. For Git metadata collection,
+[Experiment Git metadata](experiment-git-metadata.md#effective-settings) defines
+how organization policy combines with this precedence.
+
 ## Process environment contract
 
 SDKs should read environment variables through the runtime's standard process
@@ -111,6 +116,10 @@ The current `.env.braintrust` allowlist is:
 | `BRAINTRUST_ORG_NAME`          | Organization name to use when logging in.        |
 | `BRAINTRUST_ENVIRONMENT_TYPE`  | Explicit span-origin environment type.           |
 | `BRAINTRUST_ENVIRONMENT_NAME`  | Explicit span-origin environment name.           |
+
+`BRAINTRUST_ENABLE_GIT_METADATA` is intentionally not allowlisted. SDKs read
+it from the process environment only; see
+[Experiment Git metadata](experiment-git-metadata.md#envbraintrust).
 
 If `.env.braintrust` contains other names, SDKs must ignore them. They must not
 expose ignored values through SDK config APIs or process-environment helpers.
