@@ -1,4 +1,4 @@
-"""Executable examples for the draft protocol, not a reporting implementation."""
+"""Executable examples of the shared history model, not a reporting service."""
 
 import copy
 import hashlib
@@ -9,7 +9,7 @@ import unittest
 
 
 VECTORS = Path(__file__).resolve().parents[1] / "test/history/sequences.json"
-MAX_INDEX = 2**53 - 1
+MAX_INDEX = 2**32 - 1
 
 
 def index(value):
@@ -121,6 +121,75 @@ def match_parts(parent_id, parent_fingerprints, current, budget=10000):
     return parts if len(json.dumps(parts)) < len(json.dumps(literal)) else literal
 
 
+class ExampleCache:
+    """Reference semantics only; storage and reporting are deliberately absent."""
+
+    def __init__(self):
+        self.definitions = {}
+        self.arrays = {}
+
+    @staticmethod
+    def decode(value, arrays):
+        if not isinstance(value, dict) or len(value) != 1:
+            raise ValueError("invalid encoded value")
+        if "literal" in value:
+            return copy.deepcopy(value["literal"])
+        if "array" in value:
+            key = identifier(value["array"])
+            if key not in arrays:
+                raise ValueError("missing sequence")
+            return copy.deepcopy(arrays[key])
+        if "object" in value and isinstance(value["object"], dict):
+            return {key: ExampleCache.decode(child, arrays)
+                    for key, child in value["object"].items()}
+        raise ValueError("invalid encoded value")
+
+    def apply(self, frame):
+        if set(frame) != {"sequences", "values"}:
+            raise ValueError("invalid frame")
+        staged = copy.deepcopy(self.definitions)
+        seen = set()
+        for definition in frame["sequences"]:
+            key = definition["id"]
+            if key in seen:
+                raise ValueError("duplicate definition")
+            seen.add(key)
+            if key in staged and staged[key] != definition:
+                raise ValueError("conflicting definition")
+            staged[key] = copy.deepcopy(definition)
+        arrays = resolve(list(staged.values()))
+        for value in frame["values"]:
+            self.decode(value, arrays)
+        self.definitions, self.arrays = staged, arrays
+        return copy.deepcopy(frame["values"])
+
+    def read(self, value):
+        return self.decode(value, self.arrays)
+
+    def export(self, roots):
+        needed = set()
+
+        def sequence(key):
+            if key in needed:
+                return
+            needed.add(key)
+            for part in self.definitions[key]["parts"]:
+                if "slice" in part:
+                    sequence(part["slice"]["id"])
+
+        def value(node):
+            if "array" in node:
+                sequence(node["array"])
+            elif "object" in node:
+                for child in node["object"].values():
+                    value(child)
+
+        for root in roots:
+            value(root)
+        return {"sequences": [copy.deepcopy(d) for key, d in self.definitions.items()
+                              if key in needed], "values": copy.deepcopy(roots)}
+
+
 class HistorySequenceExamples(unittest.TestCase):
     def test_conformance_vectors(self):
         vectors = json.loads(VECTORS.read_text())
@@ -190,23 +259,69 @@ class HistorySequenceExamples(unittest.TestCase):
         self.assertEqual(match_parts(f"{1:032x}", fingerprints(parent), reordered),
                          [{"literal": reordered}])
 
-    def test_wire_example_is_a_valid_literal_root(self):
+
+    def test_document_frames_replay_over_network_or_storage(self):
         spec = VECTORS.parents[2] / (
             "skills/instrumentation-spec/references/features/history-sequences.md"
         )
-        documents = [json.loads(block) for block in re.findall(
+        frames = [json.loads(block) for block in re.findall(
             r"```json\n(.*?)\n```", spec.read_text(), flags=re.DOTALL
         )]
-        envelope = next(document for document in documents if "sequences" in document)
-        states = resolve(envelope["sequences"])
-        row = envelope["rows"][0]
-        binding = row["bindings"][0]
-        self.assertEqual(binding["path"], [])
-        self.assertEqual(row["event"][binding["field"]], [])
-        self.assertEqual(states[binding["id"]], [
+        sender_view, restored = ExampleCache(), ExampleCache()
+        self.assertEqual(len(frames), 2)
+        for frame in frames:
+            values = sender_view.apply(frame)
+            # The same serialized frame can cross a network or be read from storage.
+            restored_values = restored.apply(json.loads(json.dumps(frame)))
+            self.assertEqual([sender_view.read(v) for v in values],
+                             [restored.read(v) for v in restored_values])
+        self.assertEqual(restored.read(restored_values[0])["input"], [
             {"role": "system", "content": "Be helpful."},
             {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hello!"},
+            {"role": "user", "content": "Tell me more"},
         ])
+
+    def test_self_contained_export_restores_compacted_history(self):
+        case = json.loads(VECTORS.read_text())["valid"][0]
+        root = {"array": case["definitions"][2]["id"]}
+        cache = ExampleCache()
+        cache.apply({"sequences": case["definitions"], "values": [root]})
+        restored = ExampleCache()
+        exported = json.loads(json.dumps(cache.export([root])))
+        values = restored.apply(exported)
+        self.assertEqual(restored.read(values[0]), case["expected"][root["array"]])
+        self.assertEqual(len(exported["sequences"]), 3)  # Unrelated branch omitted.
+
+    def test_reapplication_and_conflict_are_sequence_operations(self):
+        definition = {"id": f"{1:032x}", "length": 1,
+                      "parts": [{"literal": ["original"]}]}
+        frame = {"sequences": [definition], "values": [{"array": definition["id"]}]}
+        cache = ExampleCache()
+        first = cache.apply(frame)
+        self.assertEqual(cache.apply(frame), first)  # Values still emitted on replay.
+        changed = copy.deepcopy(frame)
+        changed["sequences"][0]["parts"] = [{"literal": ["changed"]}]
+        with self.assertRaisesRegex(ValueError, "conflicting definition"):
+            cache.apply(changed)
+        self.assertEqual(cache.read(first[0]), ["original"])
+
+    def test_invalid_value_does_not_expose_partial_frame(self):
+        definition = {"id": f"{1:032x}", "length": 0, "parts": []}
+        cache = ExampleCache()
+        with self.assertRaisesRegex(ValueError, "missing sequence"):
+            cache.apply({"sequences": [definition],
+                         "values": [{"array": f"{2:032x}"}]})
+        self.assertEqual(cache.definitions, {})
+
+    def test_literal_reference_shaped_data_and_uint32(self):
+        value = {"literal": {"array": "application data", "nested": [None, []]}}
+        cache = ExampleCache()
+        self.assertEqual(cache.read(cache.apply({"sequences": [], "values": [value]})[0]),
+                         value["literal"])
+        self.assertEqual(index(2**32 - 1), 2**32 - 1)
+        with self.assertRaisesRegex(ValueError, "invalid index"):
+            index(2**32)
 
 
 if __name__ == "__main__":
