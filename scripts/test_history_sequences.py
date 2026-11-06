@@ -156,20 +156,81 @@ class ExampleCache:
                 "parts": [{"literal": values}] if values else []}
 
     def apply_op(self, operation):
-        definitions = [operation["input_history"]] if "input_history" in operation else []
-        staged, arrays = self.stage(definitions)
         materialized = copy.deepcopy(operation)
-        if "input_history" in operation:
-            value = arrays[operation["input_history"]["id"]]
-            if "input" in operation and json.dumps(operation["input"], sort_keys=True) != json.dumps(value, sort_keys=True):
-                raise ValueError("conflicting full and compact values")
-            materialized.pop("input_history")
-            materialized["input"] = copy.deepcopy(value)
+        payload = operation.get("input")
+        definitions = []
+        if isinstance(payload, dict) and set(payload) == {"$braintrust_history"}:
+            sequence = payload["$braintrust_history"]
+            if not isinstance(sequence, dict) or set(sequence) != {"id", "length", "parts"}:
+                raise ValueError("invalid sequenced input")
+            definitions.append(sequence)
+        staged, arrays = self.stage(definitions)
+        if definitions:
+            materialized["input"] = copy.deepcopy(arrays[definitions[0]["id"]])
+        elif isinstance(payload, dict) and set(payload) == {"$braintrust_literal"}:
+            materialized["input"] = copy.deepcopy(payload["$braintrust_literal"])
         self.definitions, self.arrays = staged, arrays
         row = copy.deepcopy(self.rows.get(operation["id"], {}))
         row.update(materialized)
         self.rows[operation["id"]] = row
         return copy.deepcopy(row)
+
+
+def compact(sequence):
+    return {"$braintrust_history": sequence}
+
+
+def read_sequence(key, load, start=0, end=None):
+    """Range traversal over validated stored definitions, without ancestor expansion."""
+    result, active, descriptors = [], set(), {}
+    stack = [("node", key, start, end)]
+    while stack:
+        kind, value, lo, hi = stack.pop()
+        if kind == "exit":
+            active.remove(value)
+            continue
+        if kind == "literal":
+            result.extend(copy.deepcopy(value[lo:hi]))
+            continue
+        if value in active:
+            raise ValueError("cycle")
+        if value not in descriptors:
+            try:
+                descriptors[value] = load(value)
+            except KeyError as exc:
+                raise ValueError("missing sequence") from exc
+        definition = descriptors[value]
+        if identifier(definition["id"]) != value:
+            raise ValueError("wrong sequence identity")
+        length = index(definition["length"])
+        lo, hi = index(lo), length if hi is None else index(hi)
+        if not lo <= hi <= length:
+            raise ValueError("out-of-bounds slice")
+        active.add(value)
+        tasks, offset = [], 0
+        for part in definition["parts"]:
+            if set(part) == {"literal"} and isinstance(part["literal"], list):
+                size = len(part["literal"])
+                task_kind, source, source_start = "literal", part["literal"], 0
+            elif set(part) == {"slice"}:
+                section = part["slice"]
+                source_start, source_end = index(section["start"]), index(section["end"])
+                if source_start > source_end:
+                    raise ValueError("out-of-bounds slice")
+                size = source_end - source_start
+                task_kind, source = "node", identifier(section["id"])
+            else:
+                raise ValueError("invalid part")
+            overlap_start, overlap_end = max(lo, offset), min(hi, offset + size)
+            if overlap_start < overlap_end:
+                tasks.append((task_kind, source, source_start + overlap_start - offset,
+                              source_start + overlap_end - offset))
+            offset = index(offset + size)
+        if offset != length:
+            raise ValueError("length mismatch")
+        stack.append(("exit", value, None, None))
+        stack.extend(reversed(tasks))
+    return result
 
 
 class HistorySequenceExamples(unittest.TestCase):
@@ -271,7 +332,7 @@ class HistorySequenceExamples(unittest.TestCase):
         self.assertNotEqual(snapshot["id"], root)
         restored = ExampleCache()
         row = restored.apply_op(json.loads(json.dumps({
-            "id": "restored", "input_history": snapshot,
+            "id": "restored", "input": compact(snapshot),
         })))
         self.assertEqual(row["input"], case["expected"][root])
         self.assertEqual(len(restored.definitions), 1)
@@ -293,7 +354,7 @@ class HistorySequenceExamples(unittest.TestCase):
         ]}
         cache = ExampleCache()
         with self.assertRaisesRegex(ValueError, "missing sequence"):
-            cache.apply_op({"id": "row", "input_history": definition})
+            cache.apply_op({"id": "row", "input": compact(definition)})
         self.assertEqual(cache.definitions, {})
         self.assertEqual(cache.rows, {})
 
@@ -302,14 +363,14 @@ class HistorySequenceExamples(unittest.TestCase):
         cache.apply_op({"id": "row", "input": ["legacy"], "output": ["output"]})
         definition = {"id": f"{1:032x}", "length": 1,
                       "parts": [{"literal": ["compact"]}]}
-        row = cache.apply_op({"id": "row", "input_history": definition})
+        row = cache.apply_op({"id": "row", "input": compact(definition)})
         self.assertEqual(row["input"], ["compact"])
         self.assertEqual(row["output"], ["output"])
         self.assertEqual(cache.apply_op({"id": "row", "input": None})["input"], None)
-        cache.apply_op({"id": "row", "input": ["compact"], "input_history": definition})
-        with self.assertRaisesRegex(ValueError, "conflicting full and compact"):
-            cache.apply_op({"id": "row", "input": ["different"],
-                            "input_history": definition})
+        row = cache.apply_op({"id": "row", "input": compact(definition)})
+        self.assertEqual(row["input"], ["compact"])
+        with self.assertRaisesRegex(ValueError, "invalid sequenced input"):
+            cache.apply_op({"id": "row", "input": {"$braintrust_history": {"parts": []}}})
         self.assertEqual(cache.rows["row"]["input"], ["compact"])
 
     def test_response_joins_history_only_in_the_next_captured_input(self):
@@ -319,7 +380,7 @@ class HistorySequenceExamples(unittest.TestCase):
         next_user = {"role": "user", "content": "Follow-up"}
         definition = {"id": f"{1:032x}", "length": 1,
                       "parts": [{"literal": [user]}]}
-        first = cache.apply_op({"id": "first", "input_history": definition,
+        first = cache.apply_op({"id": "first", "input": compact(definition),
                                 "output": [response]})
         self.assertEqual(first["input"], [user])
         self.assertEqual(first["output"], [response])
@@ -328,7 +389,7 @@ class HistorySequenceExamples(unittest.TestCase):
             {"slice": {"id": definition["id"], "start": 0, "end": 1}},
             {"literal": [response, next_user]},
         ]}
-        row = cache.apply_op({"id": "second", "input_history": next_input})
+        row = cache.apply_op({"id": "second", "input": compact(next_input)})
         self.assertEqual(row["input"], [user, response, next_user])
         self.assertNotIn("output", row)
 
@@ -336,10 +397,59 @@ class HistorySequenceExamples(unittest.TestCase):
         definition = {"id": f"{1:032x}", "length": 0, "parts": []}
         for output in (None, "response", {"content": "response"}, ["response"]):
             with self.subTest(output=output):
-                row = ExampleCache().apply_op({"id": "row", "input_history": definition,
+                row = ExampleCache().apply_op({"id": "row", "input": compact(definition),
                                               "output": output})
                 self.assertEqual(row["input"], [])
                 self.assertEqual(row["output"], output)
+
+    def test_reserved_literal_input_is_unwrapped_only_once(self):
+        for original in ({"$braintrust_history": "user data"},
+                         {"$braintrust_literal": {"$braintrust_history": "nested"}}):
+            row = ExampleCache().apply_op({"id": "row", "input": {
+                "$braintrust_literal": original,
+            }})
+            self.assertEqual(row["input"], original)
+        ordinary = {"$braintrust_history": "data", "other": True}
+        self.assertEqual(ExampleCache().apply_op({"id": "row", "input": ordinary})["input"], ordinary)
+
+    def test_readback_loads_retained_ranges_not_discarded_ancestors(self):
+        case = json.loads(VECTORS.read_text())["valid"][0]
+        stored = {d["id"]: json.dumps(d) for d in case["definitions"]}
+        root = case["definitions"][2]["id"]
+        loaded = []
+
+        def load(key):
+            loaded.append(key)
+            return json.loads(stored[key])
+
+        restored = read_sequence(root, load)
+        self.assertEqual(restored, case["expected"][root])
+        self.assertEqual(loaded, [root, case["definitions"][1]["id"]])
+        self.assertEqual(fingerprints(restored), fingerprints(case["expected"][root]))
+        self.assertEqual(read_sequence(root, lambda key: json.loads(stored[key]), 1, 3),
+                         case["expected"][root][1:3])
+
+    def test_readback_uses_a_stack_for_long_chains(self):
+        definitions = {f"{1:032x}": {
+            "id": f"{1:032x}", "length": 1, "parts": [{"literal": ["message"]}],
+        }}
+        for i in range(2, 1501):
+            definitions[f"{i:032x}"] = {
+                "id": f"{i:032x}", "length": 1, "parts": [
+                    {"slice": {"id": f"{i-1:032x}", "start": 0, "end": 1}},
+                ],
+            }
+        self.assertEqual(read_sequence(f"{1500:032x}", definitions.__getitem__), ["message"])
+
+    def test_readback_reports_missing_state_and_cycles(self):
+        key = f"{1:032x}"
+        with self.assertRaisesRegex(ValueError, "missing sequence"):
+            read_sequence(key, {}.__getitem__)
+        cyclic = {"id": key, "length": 1, "parts": [
+            {"slice": {"id": key, "start": 0, "end": 1}},
+        ]}
+        with self.assertRaisesRegex(ValueError, "cycle"):
+            read_sequence(key, lambda _: cyclic)
 
     def test_literal_reference_shaped_data_and_uint32(self):
         data = {"array": "application data", "nested": [None, []]}
