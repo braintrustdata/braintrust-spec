@@ -35,9 +35,6 @@ automatically but do not discover ancestors are not required to add ancestor
 discovery. The requirements for policy enforcement, the environment variable,
 and field-selective collection apply only to SDKs that collect automatically.
 
-Subprocess deadlines and timeouts, and replacing network-based default-branch
-discovery with local refs, are outside this spec.
-
 ## Repository metadata
 
 `repo_info` is an object with the following optional fields. SDKs must omit
