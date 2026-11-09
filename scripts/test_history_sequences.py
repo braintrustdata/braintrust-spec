@@ -36,8 +36,6 @@ def part_value(part):
         if index(section["start"]) > index(section["end"]):
             raise ValueError("out-of-bounds slice")
         return "slice", section
-    if isinstance(part, dict) and set(part) == {"$braintrust_literal"}:
-        return "literal", part["$braintrust_literal"]
     return "literal", part
 
 
@@ -52,12 +50,6 @@ def sequence_length(definition):
         kind, value = part_value(part)
         length = index(length + (value["end"] - value["start"] if kind == "slice" else 1))
     return length
-
-
-def literal_parts(values):
-    return [{"$braintrust_literal": copy.deepcopy(value)}
-            if isinstance(value, dict) and set(value) in ({"$braintrust_slice"}, {"$braintrust_literal"})
-            else copy.deepcopy(value) for value in values]
 
 
 def resolve(definitions):
@@ -128,13 +120,13 @@ def match_parts(parent_id, parent_fingerprints, current, budget=10000):
     length, old_start, new_start = best
     old_start, new_start = -old_start, -new_start
     if length == 0:
-        return literal_parts(current)
-    parts = literal_parts(current[:new_start])
+        return copy.deepcopy(current)
+    parts = copy.deepcopy(current[:new_start])
     parts.append({"$braintrust_slice": {
         "id": parent_id, "start": old_start, "end": old_start + length,
     }})
-    parts.extend(literal_parts(current[new_start + length:]))
-    literal = literal_parts(current)
+    parts.extend(copy.deepcopy(current[new_start + length:]))
+    literal = copy.deepcopy(current)
     return parts if len(json.dumps(parts)) < len(json.dumps(literal)) else literal
 
 
@@ -166,7 +158,7 @@ class ExampleCache:
 
     def snapshot(self, key):
         values = self.read(key)
-        return {"id": uuid.uuid4().hex, "parts": literal_parts(values)}
+        return {"id": uuid.uuid4().hex, "parts": copy.deepcopy(values)}
 
     def apply_op(self, operation):
         materialized = copy.deepcopy(operation)
@@ -180,8 +172,6 @@ class ExampleCache:
         staged, arrays = self.stage(definitions)
         if definitions:
             materialized["input"] = copy.deepcopy(arrays[definitions[0]["id"]])
-        elif isinstance(payload, dict) and set(payload) == {"$braintrust_literal"}:
-            materialized["input"] = copy.deepcopy(payload["$braintrust_literal"])
         self.definitions, self.arrays = staged, arrays
         row = copy.deepcopy(self.rows.get(operation["id"], {}))
         row.update(materialized)
@@ -277,7 +267,7 @@ class HistorySequenceExamples(unittest.TestCase):
                 self.assertEqual([(s["start"], s["end"]) for s in slices],
                                  [expected_range])
                 result = resolve([
-                    {'id': parent_id, 'parts': literal_parts(parent)},
+                    {'id': parent_id, 'parts': copy.deepcopy(parent)},
                     {'id': new_id, 'parts': parts},
                 ])
                 self.assertEqual(result[new_id], current)
@@ -286,7 +276,7 @@ class HistorySequenceExamples(unittest.TestCase):
         parent_id = f"{1:032x}"
         repeated = [{"content": "same" * 200}] * 100
         self.assertEqual(match_parts(parent_id, fingerprints(repeated),
-                                     repeated, budget=0), literal_parts(repeated))
+                                     repeated, budget=0), copy.deepcopy(repeated))
         self.assertEqual(match_parts(parent_id, fingerprints([1]), [2]),
                          [2])
         self.assertEqual(match_parts(parent_id, fingerprints([1]), []), [])
@@ -299,7 +289,7 @@ class HistorySequenceExamples(unittest.TestCase):
         cache = fingerprints(parent)
         parent[0]["content"] = "changed" * 200
         self.assertEqual(match_parts(f"{1:032x}", cache, parent),
-                         literal_parts(parent))
+                         copy.deepcopy(parent))
 
     def test_matching_encoding_changes_only_reduce_reuse(self):
         parent = [{"role": "user", "content": "same" * 200}]
@@ -307,7 +297,7 @@ class HistorySequenceExamples(unittest.TestCase):
         self.assertEqual(parent, reordered)
         self.assertNotEqual(fingerprints(parent), fingerprints(reordered))
         self.assertEqual(match_parts(f"{1:032x}", fingerprints(parent), reordered),
-                         literal_parts(reordered))
+                         copy.deepcopy(reordered))
 
 
     def test_document_spanops_replay_over_network_or_storage(self):
@@ -401,11 +391,11 @@ class HistorySequenceExamples(unittest.TestCase):
                 self.assertEqual(row["input"], [])
                 self.assertEqual(row["output"], output)
 
-    def test_direct_parts_preserve_literal_arrays_and_reserved_objects(self):
+    def test_direct_parts_preserve_literal_arrays_and_nested_objects(self):
         values = [{"role": "user", "content": "message"}, ["nested", "array"], None,
-                  {"$braintrust_slice": {"id": "application data"}},
-                  {"$braintrust_literal": {"$braintrust_slice": "nested"}}]
-        definition = {"id": f"{1:032x}", "parts": literal_parts(values)}
+                  {"content": {"$braintrust_slice": "nested data"}},
+                  {"$braintrust_slice": "ordinary data", "other": True}]
+        definition = {"id": f"{1:032x}", "parts": copy.deepcopy(values)}
         self.assertNotIn("length", definition)
         self.assertEqual(sequence_length(definition), len(values))
         cache = ExampleCache()
@@ -426,15 +416,16 @@ class HistorySequenceExamples(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid index"):
             sequence_length(definition)
 
-    def test_reserved_literal_input_is_unwrapped_only_once(self):
-        for original in ({"$braintrust_history": "user data"},
-                         {"$braintrust_literal": {"$braintrust_history": "nested"}}):
-            row = ExampleCache().apply_op({"id": "row", "input": {
-                "$braintrust_literal": original,
-            }})
-            self.assertEqual(row["input"], original)
-        ordinary = {"$braintrust_history": "data", "other": True}
-        self.assertEqual(ExampleCache().apply_op({"id": "row", "input": ordinary})["input"], ordinary)
+    def test_tag_recognition_is_limited_to_the_reserved_position(self):
+        ordinary_inputs = [
+            {"content": {"$braintrust_history": "nested data"}},
+            {"$braintrust_history": "ordinary data", "other": True},
+            {"$braintrust_slice": "ordinary at the input root"},
+        ]
+        for payload in ordinary_inputs:
+            with self.subTest(payload=payload):
+                row = ExampleCache().apply_op({"id": "row", "input": payload})
+                self.assertEqual(row["input"], payload)
 
     def test_nested_slice_indexes_materialized_items_across_parts(self):
         cases = json.loads(VECTORS.read_text())["valid"]

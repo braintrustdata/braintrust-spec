@@ -18,7 +18,6 @@ A sequence is composed of literal elements and slices of existing sequences:
 Sequence = { id: SequenceId, parts: Part[] }
 Part     = JsonValue
          | { "$braintrust_slice": { id: SequenceId, start: uint32, end: uint32 } }
-         | { "$braintrust_literal": JsonValue }
 ```
 
 `SequenceId` is a nonzero random 128-bit identifier, encoded as 32 lowercase hex
@@ -28,19 +27,17 @@ An exact single-key `$braintrust_slice` object contributes the referenced
 materialized range `[start, end)`. Indexes are unsigned 32-bit integers and MUST
 satisfy `start <= end <= source.length`.
 
-The materialized length is derived: sum one for each ordinary or escaped item and
+The materialized length is derived: sum one for each ordinary item and
 `end - start` for each slice. It is not transmitted. Computing it does not require
 expanding referenced contents. Implementations MAY cache this derived length and
 part offsets; they MUST check unsigned 32-bit arithmetic rather than wrap on overflow.
 An empty sequence is `{id, parts: []}`.
 
-At the top level of each part, exact single-key `$braintrust_slice` and
-`$braintrust_literal` objects are reserved. To include such an object as actual
-data, wrap it once in `$braintrust_literal`. Unwrap that escape once and emit its
-contents as one item, without interpreting them again. Malformed slice wrappers
-are errors; objects with additional keys and reserved-looking objects nested
-inside a message remain ordinary data. A nested array is also one literal item,
-not a group of messages to flatten.
+At the top level of each part, an exact single-key `$braintrust_slice` object
+always denotes a slice; that shape is reserved and cannot represent literal data.
+Malformed slice wrappers are errors. Objects with additional keys and reserved-
+looking objects nested inside a message remain ordinary data. A nested array is
+one literal item, not a group of messages to flatten.
 
 Slice indexes MUST address the referenced sequence's entire materialized array,
 not positions in its `parts` list. This applies recursively when the referenced
@@ -78,20 +75,13 @@ sequence representation. The reserved shape is an object with exactly one key:
 
 ```text
 SequencedInput = { "$braintrust_history": Sequence }
-LiteralInput   = { "$braintrust_literal": JsonValue }
 ```
 
-At the root of `input`, an exact `$braintrust_history` wrapper is decoded as a
-sequence and validated as such. An exact `$braintrust_literal` wrapper is unwrapped
-once and its contents are ordinary data, never recursively interpreted as another
-wrapper. All other values retain their existing full-payload behavior. Objects
-with additional keys and reserved-looking objects nested inside message payloads
-are ordinary data. Malformed reserved wrappers are errors, not full-payload fallbacks.
-
-Producers MUST escape a literal input that itself has either exact reserved shape
-using `$braintrust_literal`. These shapes become reserved: an older producer already
-emitting that exact application object cannot be distinguished by shape alone.
-The backend rollout must account for that compatibility boundary. Materialized
+At the root of `input`, an exact single-key `$braintrust_history` object always
+denotes a sequence and is validated as such; that shape is reserved. All other
+values retain their existing full-payload behavior. Objects with additional keys
+and reserved-looking objects nested inside message payloads are ordinary data.
+Malformed reserved wrappers are errors, not full-payload fallbacks. Materialized
 query results are logical data and MUST NOT be decoded a second time.
 
 The sequence describes the complete array-valued input sent to this LLM request:
@@ -357,7 +347,7 @@ Ordinary OTel output retains its established complete-message format unless its
 consumer supports a compact representation; conversation IDs retain their meaning.
 
 The sequence vectors and cache tests exercise round-trip span reconstruction,
-matching without old contents, selective chain readback, literal escapes, mixed full/compact
+matching without old contents, selective chain readback, reserved shapes, mixed full/compact
 updates, restart/replay, missing state, and invalid ranges. Implementations must
 additionally validate storage/transport crash boundaries and measure matching CPU,
 queue memory, ingress bytes, physical storage, and query cost. Requesting every expanded history can
