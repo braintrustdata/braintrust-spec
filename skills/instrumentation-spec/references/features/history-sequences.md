@@ -27,6 +27,23 @@ and MUST satisfy `start <= end <= source.length`. Concatenating the parts MUST
 yield exactly `length` elements. Lengths and indexes are unsigned 32-bit integers;
 implementations MUST check arithmetic rather than wrap on overflow.
 
+Slice indexes MUST address the referenced sequence's entire materialized array,
+not positions in its `parts` list. This applies recursively when the referenced
+sequence contains slices. `length` is the materialized element count, not the
+number of parts. A slice may start or end within a part and span several parts.
+Materialization expands sequence references, not arrays nested inside literal
+message values.
+
+```text
+A = literal([a, b, c])                         = [a, b, c]
+B = literal([x]) + slice(A, 1, 3) + literal([y, z])
+                                              = [x, b, c, y, z]
+C = slice(B, 1, 4)                            = [b, c, y]
+```
+
+B has three parts but five materialized items. C takes materialized positions
+1 through 3, crossing B's slice and its final literal part.
+
 An empty sequence has `length: 0` and `parts: []`. Repeated equal elements remain
 separate occurrences. Nested payload fields, reasoning, attachment references,
 and numeric precision retain their existing captured meanings. Literal elements

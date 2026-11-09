@@ -412,6 +412,13 @@ class HistorySequenceExamples(unittest.TestCase):
         ordinary = {"$braintrust_history": "data", "other": True}
         self.assertEqual(ExampleCache().apply_op({"id": "row", "input": ordinary})["input"], ordinary)
 
+    def test_nested_slice_indexes_materialized_items_across_parts(self):
+        cases = json.loads(VECTORS.read_text())["valid"]
+        case = next(c for c in cases if c["name"] == "nested-slice-crosses-part-boundaries")
+        stored = {d["id"]: d for d in case["definitions"]}
+        root = case["definitions"][2]["id"]
+        self.assertEqual(read_sequence(root, stored.__getitem__), ["b", "c", "y"])
+
     def test_readback_loads_retained_ranges_not_discarded_ancestors(self):
         case = json.loads(VECTORS.read_text())["valid"][0]
         stored = {d["id"]: json.dumps(d) for d in case["definitions"]}
