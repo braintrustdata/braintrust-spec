@@ -15,44 +15,54 @@ A cache contains immutable sequences, each representing an ordered JSON array.
 A sequence is composed of literal elements and slices of existing sequences:
 
 ```text
-Sequence = { id: SequenceId, length: uint32, parts: Part[] }
-Part     = { literal: JsonValue[] }
-         | { slice: { id: SequenceId, start: uint32, end: uint32 } }
+Sequence = { id: SequenceId, parts: Part[] }
+Part     = JsonValue
+         | { "$braintrust_slice": { id: SequenceId, start: uint32, end: uint32 } }
+         | { "$braintrust_literal": JsonValue }
 ```
 
 `SequenceId` is a nonzero random 128-bit identifier, encoded as 32 lowercase hex
-characters in JSON. Individual messages do not need identities. Each slice
-contributes `source[start:end]`: indexes are half-open, address array elements,
-and MUST satisfy `start <= end <= source.length`. Concatenating the parts MUST
-yield exactly `length` elements. Lengths and indexes are unsigned 32-bit integers;
-implementations MUST check arithmetic rather than wrap on overflow.
+characters in JSON. Individual messages need no identities. Ordinary parts are
+individual messages or other JSON items; each contributes exactly one element.
+An exact single-key `$braintrust_slice` object contributes the referenced
+materialized range `[start, end)`. Indexes are unsigned 32-bit integers and MUST
+satisfy `start <= end <= source.length`.
+
+The materialized length is derived: sum one for each ordinary or escaped item and
+`end - start` for each slice. It is not transmitted. Computing it does not require
+expanding referenced contents. Implementations MAY cache this derived length and
+part offsets; they MUST check unsigned 32-bit arithmetic rather than wrap on overflow.
+An empty sequence is `{id, parts: []}`.
+
+At the top level of each part, exact single-key `$braintrust_slice` and
+`$braintrust_literal` objects are reserved. To include such an object as actual
+data, wrap it once in `$braintrust_literal`. Unwrap that escape once and emit its
+contents as one item, without interpreting them again. Malformed slice wrappers
+are errors; objects with additional keys and reserved-looking objects nested
+inside a message remain ordinary data. A nested array is also one literal item,
+not a group of messages to flatten.
 
 Slice indexes MUST address the referenced sequence's entire materialized array,
 not positions in its `parts` list. This applies recursively when the referenced
-sequence contains slices. `length` is the materialized element count, not the
-number of parts. A slice may start or end within a part and span several parts.
-Materialization expands sequence references, not arrays nested inside literal
-message values.
+sequence contains slices. A slice can start/end inside another slice and cross
+several parts:
 
 ```text
-A = literal([a, b, c])                         = [a, b, c]
-B = literal([x]) + slice(A, 1, 3) + literal([y, z])
-                                              = [x, b, c, y, z]
-C = slice(B, 1, 4)                            = [b, c, y]
+A.parts = [a, b, c]                           => [a, b, c]
+B.parts = [x, slice(A, 1, 3), y, z]           => [x, b, c, y, z]
+C.parts = [slice(B, 1, 4)]                    => [b, c, y]
 ```
 
-B has three parts but five materialized items. C takes materialized positions
-1 through 3, crossing B's slice and its final literal part.
-
-An empty sequence has `length: 0` and `parts: []`. Repeated equal elements remain
-separate occurrences. Nested payload fields, reasoning, attachment references,
-and numeric precision retain their existing captured meanings. Literal elements
-are opaque JSON; reference-shaped objects inside them remain ordinary data.
+B has four parts but five materialized items. C takes materialized positions
+1 through 3, crossing B's slice and its following literal item. `slice(...)` is
+shorthand here for the `$braintrust_slice` object above. Repeated equal messages
+remain separate occurrences; nested fields, reasoning, attachment references,
+and numeric precision retain their captured meanings.
 
 Sequences form an immutable directed acyclic graph. An ID denotes one definition;
 it MUST NOT be reused for a different definition. Reapplying an identical
 definition is a no-op. Conflicting definitions, cycles, malformed tags, invalid
-indexes, and length mismatches are errors.
+indexes, and derived-length overflow are errors.
 
 All references are interpreted within the cache's identity domain, supplied by
 its owner. Reporting domains MUST be isolated by organization, destination, and
@@ -90,7 +100,7 @@ directly in that SpanOp's `input`. `output` contains only this request's respons
 and keeps its existing representation. The next input includes a previous response
 only when it was actually part of that captured request.
 
-For example, the first span carries a literal initial history and its response:
+For example, the first span carries its initial history and its response:
 
 ```json
 {
@@ -98,28 +108,14 @@ For example, the first span carries a literal initial history and its response:
   "span_id": "span-1",
   "root_span_id": "trace-1",
   "output": [
-    {
-      "role": "assistant",
-      "content": "Hello!"
-    }
+    {"role": "assistant", "content": "Hello!"}
   ],
   "input": {
     "$braintrust_history": {
       "id": "00000000000000000000000000000001",
-      "length": 2,
       "parts": [
-        {
-          "literal": [
-            {
-              "role": "system",
-              "content": "Be helpful."
-            },
-            {
-              "role": "user",
-              "content": "Hello"
-            }
-          ]
-        }
+        {"role": "system", "content": "Be helpful."},
+        {"role": "user", "content": "Hello"}
       ]
     }
   }
@@ -136,27 +132,16 @@ The next span carries its own sequence, reusing the preceding input:
   "input": {
     "$braintrust_history": {
       "id": "00000000000000000000000000000002",
-      "length": 4,
       "parts": [
         {
-          "slice": {
+          "$braintrust_slice": {
             "id": "00000000000000000000000000000001",
             "start": 0,
             "end": 2
           }
         },
-        {
-          "literal": [
-            {
-              "role": "assistant",
-              "content": "Hello!"
-            },
-            {
-              "role": "user",
-              "content": "Tell me more"
-            }
-          ]
-        }
+        {"role": "assistant", "content": "Hello!"},
+        {"role": "user", "content": "Tell me more"}
       ]
     }
   }
@@ -165,7 +150,7 @@ The next span carries its own sequence, reusing the preceding input:
 
 Reading the second input yields four ordinary messages. Its ID names that
 whole array, so future spans can slice it without knowing the original location
-of each message. A compaction can define `literal([summary]) + slice(second, 2, 4)`;
+of each message. A compaction can define `[summary, slice(second, 2, 4)]`;
 a branch can reference an older sequence. Responses first join reusable history
 as literals in subsequent inputs; they are not implicitly appended from `output`.
 
@@ -194,8 +179,7 @@ unload(sequence_id)
 `encode` registers a captured array and returns its sequence definition, reusing
 matching ranges when beneficial. The caller wraps that definition in
 `$braintrust_history` in its SpanOp's `input`. `apply` registers an incoming
-definition without needing
-to expand its full array. `read` materializes that array. `snapshot` returns an
+definition without needing to expand its full array. `read` materializes that array. `snapshot` returns an
 equivalent all-literal definition under a fresh ID, requiring no earlier state.
 The caller can wrap that snapshot as a span input and use its new ID for subsequent
 references. A snapshot does not rename old IDs or repair outstanding references to
@@ -206,8 +190,8 @@ or another retained copy; otherwise it must refuse while retained roots need the
 Missing state is an error, never an empty or partially reconstructed array. Both
 sides use these operations; persistence and transport are separate adapters.
 Implementations may eagerly or lazily materialize data. A read adapter supplies
-`load(sequence_id) -> Sequence` within the same identity domain. It loads the definition from memory, disk, or a scoped remote read. An
-in-memory-only adapter reports unavailable state rather than fetching implicitly.
+`load(sequence_id) -> Sequence` within the same identity domain. It loads the
+definition from memory, disk, or a scoped remote read. An in-memory-only adapter reports unavailable state rather than fetching implicitly.
 Matching never initiates hidden remote reads. A persistence adapter indexes each
 scoped ID to its immutable definition or record position; it must not resolve it
 through a span's mutable current input, which may have been updated since capture.
@@ -222,14 +206,14 @@ an instruction to replay all earlier spans or search by timestamps.
 
 To read `[start, end)` from a sequence:
 
-1. Load its definition if absent. Validate the requested range against its declared
-   length. Track the active dependency path to detect cycles; reject missing,
+1. Load its definition if absent. Validate the requested range against its
+   derived length. Track the active dependency path to detect cycles; reject missing,
    conflicting, or invalid definitions without returning a successful partial input.
-2. Walk its parts in order, tracking their cumulative element offsets. A literal's
-   length is its element count; a slice's length is `end - start`. Verify that
-   their total equals the sequence's declared length using checked arithmetic.
+2. Walk its parts in order, tracking cumulative element offsets. Each literal
+   item contributes one; each slice contributes `end - start`. Sum them with
+   checked arithmetic to derive the sequence's materialized length.
 3. Skip parts outside the requested range. For an overlapping literal, emit only
-   the intersecting elements. For an overlapping slice starting at `source_start`,
+   that one item. For an overlapping slice starting at `source_start`,
    translate the overlap's offsets within that part to
    `[source_start + overlap_start, source_start + overlap_end)` in the source.
    Load that source and repeat for that range, preserving output order.
@@ -238,8 +222,8 @@ To read `[start, end)` from a sequence:
    chains, share loaded descriptors, and avoid expanding every ancestor's array.
    A streaming consumer must observe a later read error as a failed input.
 
-For `C = literal([summary]) + slice(B, 2, 4)` and
-`B = slice(A, 0, 2) + literal([assistant, user])`, reading C yields
+For `C.parts = [summary, slice(B, 2, 4)]` and
+`B.parts = [slice(A, 0, 2), assistant, user]`, reading C yields
 `[summary, assistant, user]`. It visits C and the tail of B; A's discarded prefix
 is not materialized or fetched for its contents. Previously accepted definitions
 remain subject to validation; range-selective readback is not permission to accept
@@ -284,7 +268,7 @@ emit current literals before/after a slice of the matched parent. For example:
 ```text
 cached H: [h(A), h(B), h(C), h(D)]
 current:  [Summary, C, D, E]
-encoded:  literal([Summary]) + slice(H, 2, 4) + literal([E])
+parts:    [Summary, slice(H, 2, 4), E]
 ```
 
 A simple implementation indexes parent fingerprints by position and extends equal

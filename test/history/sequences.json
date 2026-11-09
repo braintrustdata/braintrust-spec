@@ -4,10 +4,10 @@
     {
       "name": "append-compaction-fork",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 2, "parts": [{"literal": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}]}]},
-        {"id": "00000000000000000000000000000002", "length": 4, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}}, {"literal": [{"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}, {"role": "user", "content": "U"}]}]},
-        {"id": "00000000000000000000000000000003", "length": 4, "parts": [{"literal": [{"role": "system", "content": "Summary"}]}, {"slice": {"id": "00000000000000000000000000000002", "start": 2, "end": 4}}, {"literal": [{"role": "user", "content": "U"}]}]},
-        {"id": "00000000000000000000000000000004", "length": 3, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}}, {"literal": [{"role": "system", "content": "Summary"}]}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}]},
+        {"id": "00000000000000000000000000000002", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}}, {"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}, {"role": "user", "content": "U"}]},
+        {"id": "00000000000000000000000000000003", "parts": [{"role": "system", "content": "Summary"}, {"$braintrust_slice": {"id": "00000000000000000000000000000002", "start": 2, "end": 4}}, {"role": "user", "content": "U"}]},
+        {"id": "00000000000000000000000000000004", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}}, {"role": "system", "content": "Summary"}]}
       ],
       "expected": {
         "00000000000000000000000000000001": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}],
@@ -19,9 +19,9 @@
     {
       "name": "reorder-duplicate-and-truncate",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 3, "parts": [{"literal": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}, {"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}]}]},
-        {"id": "00000000000000000000000000000002", "length": 4, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 2, "end": 3}}, {"slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 2}}, {"slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 2}}, {"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 1}}]},
-        {"id": "00000000000000000000000000000003", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 1}}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}, {"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}]},
+        {"id": "00000000000000000000000000000002", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 2, "end": 3}}, {"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 2}}, {"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 2}}, {"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 1}}]},
+        {"id": "00000000000000000000000000000003", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 1}}]}
       ],
       "expected": {
         "00000000000000000000000000000001": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}, {"role": "assistant", "content": "A", "reasoning": {"opaque": [1, null]}}],
@@ -32,9 +32,9 @@
     {
       "name": "empty-array-and-opaque-reference-shaped-data",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 0, "parts": []},
-        {"id": "00000000000000000000000000000002", "length": 4, "parts": [{"literal": [{"slice": {"id": "application-data", "start": 0, "end": 99}}, null, {"large": 9007199254740993}, {"content": {"type": "braintrust_attachment", "key": "opaque"}}]}]},
-        {"id": "00000000000000000000000000000003", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 0}}, {"slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 1}}]}
+        {"id": "00000000000000000000000000000001", "parts": []},
+        {"id": "00000000000000000000000000000002", "parts": [{"slice": {"id": "application-data", "start": 0, "end": 99}}, null, {"large": 9007199254740993}, {"content": {"type": "braintrust_attachment", "key": "opaque"}}]},
+        {"id": "00000000000000000000000000000003", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 0}}, {"$braintrust_slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 1}}]}
       ],
       "expected": {
         "00000000000000000000000000000001": [],
@@ -45,9 +45,9 @@
     {
       "name": "nested-slice-crosses-part-boundaries",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 3, "parts": [{"literal": ["a", "b", "c"]}]},
-        {"id": "00000000000000000000000000000002", "length": 5, "parts": [{"literal": ["x"]}, {"slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 3}}, {"literal": ["y", "z"]}]},
-        {"id": "00000000000000000000000000000003", "length": 3, "parts": [{"slice": {"id": "00000000000000000000000000000002", "start": 1, "end": 4}}]}
+        {"id": "00000000000000000000000000000001", "parts": ["a", "b", "c"]},
+        {"id": "00000000000000000000000000000002", "parts": ["x", {"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 3}}, "y", "z"]},
+        {"id": "00000000000000000000000000000003", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000002", "start": 1, "end": 4}}]}
       ],
       "expected": {
         "00000000000000000000000000000001": ["a", "b", "c"],
@@ -60,113 +60,113 @@
     {
       "name": "missing-base",
       "definitions": [
-        {"id": "00000000000000000000000000000002", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 1}}]}
+        {"id": "00000000000000000000000000000002", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 1}}]}
       ],
       "error": "missing sequence"
     },
     {
       "name": "out-of-bounds",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
-        {"id": "00000000000000000000000000000002", "length": 2, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"role": "user", "content": "U"}]},
+        {"id": "00000000000000000000000000000002", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}}]}
       ],
       "error": "out-of-bounds"
     },
     {
       "name": "reversed-range",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
-        {"id": "00000000000000000000000000000002", "length": 0, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 0}}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"role": "user", "content": "U"}]},
+        {"id": "00000000000000000000000000000002", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 1, "end": 0}}]}
       ],
       "error": "out-of-bounds"
     },
     {
       "name": "negative-index",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
-        {"id": "00000000000000000000000000000002", "length": 0, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": -1, "end": 0}}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"role": "user", "content": "U"}]},
+        {"id": "00000000000000000000000000000002", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": -1, "end": 0}}]}
       ],
       "error": "invalid index"
     },
     {
       "name": "boolean-index",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
-        {"id": "00000000000000000000000000000002", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": false, "end": 1}}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"role": "user", "content": "U"}]},
+        {"id": "00000000000000000000000000000002", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": false, "end": 1}}]}
       ],
       "error": "invalid index"
     },
     {
       "name": "fractional-index",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
-        {"id": "00000000000000000000000000000002", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 1.0}}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"role": "user", "content": "U"}]},
+        {"id": "00000000000000000000000000000002", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 1.0}}]}
       ],
       "error": "invalid index"
     },
     {
       "name": "uint32-overflow-index",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": [{"role": "user", "content": "U"}]}]},
-        {"id": "00000000000000000000000000000002", "length": 1, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 4294967296}}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"role": "user", "content": "U"}]},
+        {"id": "00000000000000000000000000000002", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 4294967296}}]}
       ],
       "error": "invalid index"
     },
     {
-      "name": "wrong-length",
+      "name": "unexpected-length-field",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 2, "parts": [{"literal": [{"role": "user", "content": "U"}]}]}
+        {"id": "00000000000000000000000000000001", "parts": [], "length": 2}
       ],
-      "error": "length mismatch"
+      "error": "invalid definition"
     },
     {
       "name": "self-cycle-empty-slice",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 0}}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 0}}]}
       ],
       "error": "cycle"
     },
     {
       "name": "mutual-cycle",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 0}}]},
-        {"id": "00000000000000000000000000000002", "length": 0, "parts": [{"slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 0}}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 0}}]},
+        {"id": "00000000000000000000000000000002", "parts": [{"$braintrust_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 0}}]}
       ],
       "error": "cycle"
     },
     {
-      "name": "ambiguous-part-tag",
+      "name": "malformed-slice-tag",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"literal": [], "slice": {"id": "00000000000000000000000000000002", "start": 0, "end": 0}}]}
+        {"id": "00000000000000000000000000000001", "parts": [{"$braintrust_slice": {"id": "bad"}}]}
       ],
-      "error": "invalid part"
+      "error": "invalid slice"
     },
     {
       "name": "zero-id",
       "definitions": [
-        {"id": "00000000000000000000000000000000", "length": 0, "parts": [{"literal": []}]}
+        {"id": "00000000000000000000000000000000", "parts": []}
       ],
       "error": "zero ID"
     },
     {
       "name": "uppercase-id",
       "definitions": [
-        {"id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "length": 0, "parts": [{"literal": []}]}
+        {"id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "parts": []}
       ],
       "error": "invalid ID"
     },
     {
       "name": "conflicting-definition",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"literal": []}]},
-        {"id": "00000000000000000000000000000001", "length": 1, "parts": [{"literal": ["different"]}]}
+        {"id": "00000000000000000000000000000001", "parts": []},
+        {"id": "00000000000000000000000000000001", "parts": ["different"]}
       ],
       "error": "conflicting definition"
     },
     {
       "name": "unknown-definition-member",
       "definitions": [
-        {"id": "00000000000000000000000000000001", "length": 0, "parts": [{"literal": []}], "extra": true}
+        {"id": "00000000000000000000000000000001", "parts": [], "extra": true}
       ],
       "error": "invalid definition"
     }

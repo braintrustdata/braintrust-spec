@@ -27,24 +27,50 @@ def identifier(value):
     return value
 
 
+def part_value(part):
+    if isinstance(part, dict) and set(part) == {"$braintrust_slice"}:
+        section = part["$braintrust_slice"]
+        if not isinstance(section, dict) or set(section) != {"id", "start", "end"}:
+            raise ValueError("invalid slice")
+        identifier(section["id"])
+        if index(section["start"]) > index(section["end"]):
+            raise ValueError("out-of-bounds slice")
+        return "slice", section
+    if isinstance(part, dict) and set(part) == {"$braintrust_literal"}:
+        return "literal", part["$braintrust_literal"]
+    return "literal", part
+
+
+def sequence_length(definition):
+    if set(definition) != {"id", "parts"}:
+        raise ValueError("invalid definition")
+    identifier(definition["id"])
+    if not isinstance(definition["parts"], list):
+        raise ValueError("invalid parts")
+    length = 0
+    for part in definition["parts"]:
+        kind, value = part_value(part)
+        length = index(length + (value["end"] - value["start"] if kind == "slice" else 1))
+    return length
+
+
+def literal_parts(values):
+    return [{"$braintrust_literal": copy.deepcopy(value)}
+            if isinstance(value, dict) and set(value) in ({"$braintrust_slice"}, {"$braintrust_literal"})
+            else copy.deepcopy(value) for value in values]
+
+
 def resolve(definitions):
-    """Small bounded fixture evaluator; production must use indexed storage."""
+    """Eager fixture evaluator; real storage need not expand ancestors."""
     by_id, resolved, visiting = {}, {}, set()
     for definition in definitions:
-        if set(definition) != {"id", "length", "parts"}:
-            raise ValueError("invalid definition")
-        key = identifier(definition["id"])
-        if key in by_id:
-            if by_id[key] != definition:
-                raise ValueError("conflicting definition")
-            continue
-        index(definition["length"])
-        if not isinstance(definition["parts"], list):
-            raise ValueError("invalid parts")
+        sequence_length(definition)
+        key = definition["id"]
+        if key in by_id and by_id[key] != definition:
+            raise ValueError("conflicting definition")
         by_id[key] = definition
 
     def visit(key):
-        identifier(key)
         if key in visiting:
             raise ValueError("cycle")
         if key in resolved:
@@ -54,23 +80,14 @@ def resolve(definitions):
         visiting.add(key)
         result = []
         for part in by_id[key]["parts"]:
-            if not isinstance(part, dict):
-                raise ValueError("invalid part")
-            if set(part) == {"literal"} and isinstance(part["literal"], list):
-                result.extend(copy.deepcopy(part["literal"]))
-            elif set(part) == {"slice"} and isinstance(part["slice"], dict):
-                section = part["slice"]
-                if set(section) != {"id", "start", "end"}:
-                    raise ValueError("invalid slice")
-                source = visit(section["id"])
-                start, end = index(section["start"]), index(section["end"])
-                if not start <= end <= len(source):
-                    raise ValueError("out-of-bounds slice")
-                result.extend(copy.deepcopy(source[start:end]))
+            kind, value = part_value(part)
+            if kind == "literal":
+                result.append(copy.deepcopy(value))
             else:
-                raise ValueError("invalid part")
-        if len(result) != by_id[key]["length"]:
-            raise ValueError("length mismatch")
+                source = visit(value["id"])
+                if value["end"] > len(source):
+                    raise ValueError("out-of-bounds slice")
+                result.extend(copy.deepcopy(source[value["start"]:value["end"]]))
         visiting.remove(key)
         resolved[key] = result
         return result
@@ -111,16 +128,13 @@ def match_parts(parent_id, parent_fingerprints, current, budget=10000):
     length, old_start, new_start = best
     old_start, new_start = -old_start, -new_start
     if length == 0:
-        return [{"literal": copy.deepcopy(current)}] if current else []
-    parts = []
-    if new_start:
-        parts.append({"literal": copy.deepcopy(current[:new_start])})
-    parts.append({"slice": {
+        return literal_parts(current)
+    parts = literal_parts(current[:new_start])
+    parts.append({"$braintrust_slice": {
         "id": parent_id, "start": old_start, "end": old_start + length,
     }})
-    if new_start + length < len(current):
-        parts.append({"literal": copy.deepcopy(current[new_start + length:])})
-    literal = [{"literal": copy.deepcopy(current)}]
+    parts.extend(literal_parts(current[new_start + length:]))
+    literal = literal_parts(current)
     return parts if len(json.dumps(parts)) < len(json.dumps(literal)) else literal
 
 
@@ -152,8 +166,7 @@ class ExampleCache:
 
     def snapshot(self, key):
         values = self.read(key)
-        return {"id": uuid.uuid4().hex, "length": len(values),
-                "parts": [{"literal": values}] if values else []}
+        return {"id": uuid.uuid4().hex, "parts": literal_parts(values)}
 
     def apply_op(self, operation):
         materialized = copy.deepcopy(operation)
@@ -161,7 +174,7 @@ class ExampleCache:
         definitions = []
         if isinstance(payload, dict) and set(payload) == {"$braintrust_history"}:
             sequence = payload["$braintrust_history"]
-            if not isinstance(sequence, dict) or set(sequence) != {"id", "length", "parts"}:
+            if not isinstance(sequence, dict) or set(sequence) != {"id", "parts"}:
                 raise ValueError("invalid sequenced input")
             definitions.append(sequence)
         staged, arrays = self.stage(definitions)
@@ -202,32 +215,26 @@ def read_sequence(key, load, start=0, end=None):
         definition = descriptors[value]
         if identifier(definition["id"]) != value:
             raise ValueError("wrong sequence identity")
-        length = index(definition["length"])
+        length = sequence_length(definition)
         lo, hi = index(lo), length if hi is None else index(hi)
         if not lo <= hi <= length:
             raise ValueError("out-of-bounds slice")
         active.add(value)
         tasks, offset = [], 0
         for part in definition["parts"]:
-            if set(part) == {"literal"} and isinstance(part["literal"], list):
-                size = len(part["literal"])
-                task_kind, source, source_start = "literal", part["literal"], 0
-            elif set(part) == {"slice"}:
-                section = part["slice"]
-                source_start, source_end = index(section["start"]), index(section["end"])
-                if source_start > source_end:
-                    raise ValueError("out-of-bounds slice")
-                size = source_end - source_start
-                task_kind, source = "node", identifier(section["id"])
+            part_kind, data = part_value(part)
+            if part_kind == "literal":
+                size = 1
+                task_kind, source, source_start = "literal", [data], 0
             else:
-                raise ValueError("invalid part")
+                source_start = data["start"]
+                size = data["end"] - source_start
+                task_kind, source = "node", data["id"]
             overlap_start, overlap_end = max(lo, offset), min(hi, offset + size)
             if overlap_start < overlap_end:
                 tasks.append((task_kind, source, source_start + overlap_start - offset,
                               source_start + overlap_end - offset))
             offset = index(offset + size)
-        if offset != length:
-            raise ValueError("length mismatch")
         stack.append(("exit", value, None, None))
         stack.extend(reversed(tasks))
     return result
@@ -265,13 +272,13 @@ class HistorySequenceExamples(unittest.TestCase):
             with self.subTest(expected_range=expected_range):
                 cache = fingerprints(parent)
                 parts = match_parts(parent_id, cache, current)
-                slices = [part["slice"] for part in parts if "slice" in part]
+                slices = [part["$braintrust_slice"] for part in parts
+                          if isinstance(part, dict) and set(part) == {"$braintrust_slice"}]
                 self.assertEqual([(s["start"], s["end"]) for s in slices],
                                  [expected_range])
                 result = resolve([
-                    {"id": parent_id, "length": len(parent),
-                     "parts": [{"literal": parent}]},
-                    {"id": new_id, "length": len(current), "parts": parts},
+                    {'id': parent_id, 'parts': literal_parts(parent)},
+                    {'id': new_id, 'parts': parts},
                 ])
                 self.assertEqual(result[new_id], current)
 
@@ -279,20 +286,20 @@ class HistorySequenceExamples(unittest.TestCase):
         parent_id = f"{1:032x}"
         repeated = [{"content": "same" * 200}] * 100
         self.assertEqual(match_parts(parent_id, fingerprints(repeated),
-                                     repeated, budget=0), [{"literal": repeated}])
+                                     repeated, budget=0), literal_parts(repeated))
         self.assertEqual(match_parts(parent_id, fingerprints([1]), [2]),
-                         [{"literal": [2]}])
+                         [2])
         self.assertEqual(match_parts(parent_id, fingerprints([1]), []), [])
         # A reference is larger than this tiny matching value.
         self.assertEqual(match_parts(parent_id, fingerprints([1]), [1]),
-                         [{"literal": [1]}])
+                         [1])
 
     def test_mutation_of_application_objects_does_not_reuse_old_value(self):
         parent = [{"content": "old" * 200}]
         cache = fingerprints(parent)
         parent[0]["content"] = "changed" * 200
         self.assertEqual(match_parts(f"{1:032x}", cache, parent),
-                         [{"literal": parent}])
+                         literal_parts(parent))
 
     def test_matching_encoding_changes_only_reduce_reuse(self):
         parent = [{"role": "user", "content": "same" * 200}]
@@ -300,7 +307,7 @@ class HistorySequenceExamples(unittest.TestCase):
         self.assertEqual(parent, reordered)
         self.assertNotEqual(fingerprints(parent), fingerprints(reordered))
         self.assertEqual(match_parts(f"{1:032x}", fingerprints(parent), reordered),
-                         [{"literal": reordered}])
+                         literal_parts(reordered))
 
 
     def test_document_spanops_replay_over_network_or_storage(self):
@@ -338,20 +345,17 @@ class HistorySequenceExamples(unittest.TestCase):
         self.assertEqual(len(restored.definitions), 1)
 
     def test_reapplication_and_conflict_are_sequence_operations(self):
-        definition = {"id": f"{1:032x}", "length": 1,
-                      "parts": [{"literal": ["original"]}]}
+        definition = {'id': f'{1:032x}', 'parts': ['original']}
         cache = ExampleCache()
         key = cache.apply(definition)
         self.assertEqual(cache.apply(definition), key)
-        changed = dict(definition, parts=[{"literal": ["changed"]}])
+        changed = dict(definition, parts=["changed"])
         with self.assertRaisesRegex(ValueError, "conflicting definition"):
             cache.apply(changed)
         self.assertEqual(cache.read(key), ["original"])
 
     def test_missing_history_does_not_expose_partial_operation(self):
-        definition = {"id": f"{1:032x}", "length": 1, "parts": [
-            {"slice": {"id": f"{2:032x}", "start": 0, "end": 1}},
-        ]}
+        definition = {'id': f'{1:032x}', 'parts': [{'$braintrust_slice': {'id': f'{2:032x}', 'start': 0, 'end': 1}}]}
         cache = ExampleCache()
         with self.assertRaisesRegex(ValueError, "missing sequence"):
             cache.apply_op({"id": "row", "input": compact(definition)})
@@ -361,8 +365,7 @@ class HistorySequenceExamples(unittest.TestCase):
     def test_legacy_and_compact_updates_share_one_logical_field(self):
         cache = ExampleCache()
         cache.apply_op({"id": "row", "input": ["legacy"], "output": ["output"]})
-        definition = {"id": f"{1:032x}", "length": 1,
-                      "parts": [{"literal": ["compact"]}]}
+        definition = {'id': f'{1:032x}', 'parts': ['compact']}
         row = cache.apply_op({"id": "row", "input": compact(definition)})
         self.assertEqual(row["input"], ["compact"])
         self.assertEqual(row["output"], ["output"])
@@ -378,29 +381,50 @@ class HistorySequenceExamples(unittest.TestCase):
         user = {"role": "user", "content": "Question"}
         response = {"role": "assistant", "content": "Answer"}
         next_user = {"role": "user", "content": "Follow-up"}
-        definition = {"id": f"{1:032x}", "length": 1,
-                      "parts": [{"literal": [user]}]}
+        definition = {'id': f'{1:032x}', 'parts': [user]}
         first = cache.apply_op({"id": "first", "input": compact(definition),
                                 "output": [response]})
         self.assertEqual(first["input"], [user])
         self.assertEqual(first["output"], [response])
         self.assertEqual(cache.read(definition["id"]), [user])
-        next_input = {"id": f"{2:032x}", "length": 3, "parts": [
-            {"slice": {"id": definition["id"], "start": 0, "end": 1}},
-            {"literal": [response, next_user]},
-        ]}
+        next_input = {'id': f'{2:032x}', 'parts': [{'$braintrust_slice': {'id': definition['id'], 'start': 0, 'end': 1}}, response, next_user]}
         row = cache.apply_op({"id": "second", "input": compact(next_input)})
         self.assertEqual(row["input"], [user, response, next_user])
         self.assertNotIn("output", row)
 
     def test_output_keeps_its_existing_payload_format(self):
-        definition = {"id": f"{1:032x}", "length": 0, "parts": []}
+        definition = {'id': f'{1:032x}', 'parts': []}
         for output in (None, "response", {"content": "response"}, ["response"]):
             with self.subTest(output=output):
                 row = ExampleCache().apply_op({"id": "row", "input": compact(definition),
                                               "output": output})
                 self.assertEqual(row["input"], [])
                 self.assertEqual(row["output"], output)
+
+    def test_direct_parts_preserve_literal_arrays_and_reserved_objects(self):
+        values = [{"role": "user", "content": "message"}, ["nested", "array"], None,
+                  {"$braintrust_slice": {"id": "application data"}},
+                  {"$braintrust_literal": {"$braintrust_slice": "nested"}}]
+        definition = {"id": f"{1:032x}", "parts": literal_parts(values)}
+        self.assertNotIn("length", definition)
+        self.assertEqual(sequence_length(definition), len(values))
+        cache = ExampleCache()
+        key = cache.apply(definition)
+        self.assertEqual(cache.read(key), values)
+        self.assertEqual(read_sequence(key, {key: definition}.__getitem__), values)
+        restored = ExampleCache()
+        self.assertEqual(restored.read(restored.apply(cache.snapshot(key))), values)
+
+    def test_length_is_derived_without_loading_sources_and_checks_overflow(self):
+        definition = {"id": f"{1:032x}", "parts": [
+            {"role": "user", "content": "message"},
+            {"$braintrust_slice": {"id": f"{2:032x}", "start": 2, "end": 7}},
+        ]}
+        self.assertEqual(sequence_length(definition), 6)
+        definition["parts"][1]["$braintrust_slice"]["end"] = 2**32 - 1
+        definition["parts"][1]["$braintrust_slice"]["start"] = 0
+        with self.assertRaisesRegex(ValueError, "invalid index"):
+            sequence_length(definition)
 
     def test_reserved_literal_input_is_unwrapped_only_once(self):
         for original in ({"$braintrust_history": "user data"},
@@ -437,24 +461,16 @@ class HistorySequenceExamples(unittest.TestCase):
                          case["expected"][root][1:3])
 
     def test_readback_uses_a_stack_for_long_chains(self):
-        definitions = {f"{1:032x}": {
-            "id": f"{1:032x}", "length": 1, "parts": [{"literal": ["message"]}],
-        }}
+        definitions = {f"{1:032x}": {'id': f'{1:032x}', 'parts': ['message']}}
         for i in range(2, 1501):
-            definitions[f"{i:032x}"] = {
-                "id": f"{i:032x}", "length": 1, "parts": [
-                    {"slice": {"id": f"{i-1:032x}", "start": 0, "end": 1}},
-                ],
-            }
+            definitions[f"{i:032x}"] = {'id': f'{i:032x}', 'parts': [{'$braintrust_slice': {'id': f'{i - 1:032x}', 'start': 0, 'end': 1}}]}
         self.assertEqual(read_sequence(f"{1500:032x}", definitions.__getitem__), ["message"])
 
     def test_readback_reports_missing_state_and_cycles(self):
         key = f"{1:032x}"
         with self.assertRaisesRegex(ValueError, "missing sequence"):
             read_sequence(key, {}.__getitem__)
-        cyclic = {"id": key, "length": 1, "parts": [
-            {"slice": {"id": key, "start": 0, "end": 1}},
-        ]}
+        cyclic = {'id': key, 'parts': [{'$braintrust_slice': {'id': key, 'start': 0, 'end': 1}}]}
         with self.assertRaisesRegex(ValueError, "cycle"):
             read_sequence(key, lambda _: cyclic)
 
