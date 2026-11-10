@@ -801,6 +801,8 @@ The `model` field SHOULD use the model string from the API response (which may i
 
 Instrumentation MAY include the following common LLM request configuration fields in metadata when they are present and JSON-serializable: `temperature`, `top_p`, `max_tokens`, `frequency_penalty`, `presence_penalty`, `stop`, and `response_format`.
 
+Instrumentation MUST emit `metadata.requested_service_tier` when the effective request specifies a service tier and `metadata.served_service_tier` when the provider reports the tier that served the response. These are independent string fields; SDKs MUST NOT infer the served tier from the request. See [Service tiers](features/service-tiers.md) for provider mappings, streaming behavior, omission rules, and native/OTel payloads.
+
 An integration MAY also include JSON-serializable, domain-specific metadata that is useful to users, but it MUST enumerate every captured field in an explicit integration-level allowlist. Instrumentation MUST select allowlisted fields individually and MUST NOT copy or spread arbitrary request configuration or provider metadata into span metadata.
 
 Tool-related metadata fields are specified in [Available tool definitions](#available-tool-definitions). Prompt provenance metadata fields are specified in [Prompt metadata](#prompt-metadata). Other metadata fields MUST be defined by this guide or an integration-specific allowlist before SDKs emit them.

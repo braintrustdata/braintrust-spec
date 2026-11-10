@@ -14,7 +14,7 @@ Every LLM span MUST include:
 
 `metadata.provider` is required even when a model name appears globally unique. Resellers and gateways can sell the same model at different prices, and provider is the minimum field needed to attribute cost to the pricing surface actually used.
 
-When the backend computes estimated cost from registry pricing, current cost lookup is model-driven. SDKs MUST still emit `metadata.provider` so provider-specific and reseller-specific pricing can be attributed correctly. If the exact applicable price is known to the SDK but is not representable by registry pricing, emit `metrics.estimated_cost`.
+When the backend computes estimated cost from registry pricing, it looks up the model using `metadata.model` and selects non-standard tier prices using `metadata.provider`. SDKs MUST emit `metadata.requested_service_tier` and `metadata.served_service_tier` when available, as specified in [Service tiers](service-tiers.md). If the exact applicable price is known to the SDK but is not representable by registry pricing, emit `metrics.estimated_cost`.
 
 ## Canonical metrics
 
@@ -63,6 +63,7 @@ Braintrust can only compute or display an insight when the required data is pres
 | --- | --- | --- |
 | Identify LLM spans | `span_attributes.type = "llm"` | Without this, token/cost fields may not appear in LLM-specific views or aggregations. |
 | Attribute model usage | `metadata.model`, `metadata.provider` | Model alone is insufficient for reseller or gateway pricing attribution. |
+| Attribute service-tier pricing | `metadata.model`, `metadata.provider`, `metadata.requested_service_tier` when specified, `metadata.served_service_tier` when reported | A requested non-standard tier does not prove the served tier. See [Service-tier pricing](#service-tier-pricing) for missing-tier and missing-price behavior. |
 | Prompt/completion token totals | `metrics.prompt_tokens`, `metrics.completion_tokens` | If one side is missing, only partial usage is known. |
 | Total tokens | `metrics.tokens`, or both `metrics.prompt_tokens` and `metrics.completion_tokens` | SDKs SHOULD emit `tokens` when the provider reports a total; otherwise compute it only when both parts are known. |
 | Cache-read usage and savings | `metrics.prompt_cached_tokens`, `metrics.prompt_tokens`, `metadata.model`, `metadata.provider` | If cache-read tokens are missing, cost falls back to treating all prompt tokens as uncached for cache-read purposes. |
@@ -86,6 +87,22 @@ without changing the span shape.
 1. If `span_attributes.purpose` is `"scorer"`, no estimated cost is returned for that span.
 2. If `metrics.estimated_cost` is present and finite, it is used as the span's total cost.
 3. Otherwise, Braintrust computes cost from token metrics and model/provider pricing when the necessary data is available.
+
+### Service-tier pricing
+
+Before applying the token cost formula, the backend selects rates using `metadata.served_service_tier`, with `metadata.requested_service_tier` indicating whether a missing served tier leaves pricing uncertain. The [SDK payload contract](service-tiers.md) keeps these fields separate.
+
+- A served tier takes precedence over the requested tier. A request for `flex` served as `default` uses standard prices.
+- `default`, `standard`, `on_demand`, `standard_only`, and `unspecified` select standard pricing. Backend comparisons ignore case and surrounding whitespace.
+- If both tier fields are absent, standard pricing applies for backward compatibility. If only the requested tier is present, standard pricing applies only when that value is one of the standard aliases above.
+- For models with a `pricing` section, a missing served tier after a non-standard or `auto` request, or an unrecognized served tier, produces an unknown cost (`null`).
+- Recognized non-standard tiers (`flex`, `batch`, and `priority`) require matching provider/tier rates. A missing provider, missing tier rates, date-bounded rates, conflicting prices among rates matching the prompt length, or missing rates for a used token category produces an unknown cost.
+- Models without a `pricing` section retain legacy standard pricing regardless of tier metadata. This fallback does not prove that standard processing served the call.
+- An explicit finite `metrics.estimated_cost` still takes precedence, after scorer exclusion. SDKs MUST NOT populate it from an assumed served tier.
+
+These rules follow the [backend tier-pricing implementation](https://github.com/braintrustdata/braintrust/blob/674c68bd741937365d3c3d337caf5d86cd332c08/brainstore/util/src/cost.rs). An unknown cost is not zero; sums skip spans with unknown costs.
+
+### Token cost formula
 
 When computing from token metrics, missing token fields are treated as zero, but if all token fields are missing then no cost is computed.
 
@@ -123,7 +140,7 @@ prompt_uncached_tokens * input_rate
 + completion_tokens * output_rate
 ```
 
-All rates are per million tokens. Cache-read and aggregate cache-write rates fall back to the input-token rate when no specialized rate is available.
+All rates are per million tokens. Under legacy standard pricing, cache-read and aggregate cache-write rates fall back to the input-token rate when no specialized rate is available. Non-standard tier pricing first requires rates for every used token category as described above; missing tier-specific cache rates do not fall back to standard prices.
 
 ## Estimated-cost query outputs
 
