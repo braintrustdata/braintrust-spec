@@ -7,7 +7,7 @@ import re
 import unittest
 
 
-CONVERSATION = "gen_ai.conversation.id"
+CONVERSATION = "conversation_id"
 MISSING = object()
 SPEC = Path(__file__).resolve().parents[1] / (
     "skills/instrumentation-spec/references/features/history-sequences.md"
@@ -32,11 +32,13 @@ class Reporter:
         self.previous = {}
 
     def encode(self, key, items, output=MISSING, conversation=None, linear=True):
+        if conversation is not None and (not isinstance(conversation, str) or not conversation):
+            raise ValueError("invalid conversation_id")
         row = {"id": key, "input": copy.deepcopy(items)}
         if output is not MISSING:
             row["output"] = copy.deepcopy(output)
         if conversation is not None:
-            row["metadata"] = {CONVERSATION: conversation}
+            row[CONVERSATION] = conversation
         eligible = self.deltas and linear and bool(conversation) and isinstance(items, list)
         previous = self.previous.get(conversation) if eligible else None
         if previous is not None:
@@ -67,7 +69,9 @@ class Replay:
             return copy.deepcopy(self.rows[key])
         if "input" in record and "input_delta" in record:
             raise ValueError("both full and delta inputs")
-        conversation = record.get("metadata", {}).get(CONVERSATION)
+        conversation = record.get(CONVERSATION)
+        if CONVERSATION in record and (not isinstance(conversation, str) or not conversation):
+            raise ValueError("invalid conversation_id")
         row = copy.deepcopy(record)
         if "input" in record:
             items = copy.deepcopy(record["input"])
@@ -195,11 +199,11 @@ class HistorySnapshotDeltaTests(unittest.TestCase):
         self.assertEqual(row["input"], self.next)
 
     def test_missing_checkpoint_or_output_is_unresolved(self):
-        delta = {"id": "second", "metadata": {CONVERSATION: "A"}, "input_delta": []}
+        delta = {"id": "second", CONVERSATION: "A", "input_delta": []}
         replay = Replay()
         with self.assertRaisesRegex(ValueError, "unresolved history"):
             replay.apply(delta)
-        replay.apply({"id": "first", "metadata": {CONVERSATION: "A"}, "input": self.initial})
+        replay.apply({"id": "first", CONVERSATION: "A", "input": self.initial})
         with self.assertRaisesRegex(ValueError, "unresolved history"):
             replay.apply(delta)
         self.assertNotIn("second", replay.rows)
@@ -220,6 +224,25 @@ class HistorySnapshotDeltaTests(unittest.TestCase):
         self.assertIn("input", row)
         self.assertEqual(reporter.previous["A"][0], items)
         self.assertFalse(same_json({"value": True}, {"value": 1}))
+
+    def test_native_conversation_field_controls_history_not_generic_metadata(self):
+        replay = Replay()
+        replay.apply({"id": "first", CONVERSATION: "A", "input": self.initial,
+                      "output": [self.answer],
+                      "metadata": {"gen_ai.conversation.id": "unrelated"}})
+        row = replay.apply({"id": "second", CONVERSATION: "A",
+                            "input_delta": [self.followup]})
+        self.assertEqual(row[CONVERSATION], "A")
+        self.assertEqual(row["input"], self.next)
+        with self.assertRaisesRegex(ValueError, "unresolved history"):
+            replay.apply({"id": "metadata-only", "input_delta": [],
+                          "metadata": {"gen_ai.conversation.id": "A"}})
+
+    def test_native_conversation_id_must_be_a_nonempty_string(self):
+        for value in ("", None, 1, []):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "invalid conversation_id"):
+                    Replay().apply({"id": "invalid", CONVERSATION: value, "input": []})
 
     def test_full_and_delta_are_mutually_exclusive(self):
         with self.assertRaisesRegex(ValueError, "both full and delta"):

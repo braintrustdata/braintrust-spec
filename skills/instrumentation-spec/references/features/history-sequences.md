@@ -12,13 +12,19 @@ is future work. The upstream attribute is proposed, not an adopted OTel standard
 | Complete input / checkpoint | `gen_ai.input.messages` | `input` |
 | New messages since the preceding request | `gen_ai.input.messages_delta` | `input_delta` |
 | Current response | `gen_ai.output.messages` | `output` |
-| Conversation stream | `gen_ai.conversation.id` | `metadata["gen_ai.conversation.id"]` |
+| Conversation stream | `gen_ai.conversation.id` | `conversation_id` |
 
 Native names are this spec's binding of the OTel semantics, not additional upstream
 attributes. Use each integration's established message schema consistently between
 full inputs and deltas; OTel adapters preserve the OTel message schema. Arbitrary
 native object/scalar inputs continue full reporting. Do not discard provider fields.
 There are no custom history wrappers, sequence IDs, or slice objects in this model.
+
+`conversation_id` is an optional first-class, nonempty string field on a Braintrust
+span. OTel ingestion maps `gen_ai.conversation.id` into it. Backend persistence,
+queries, and history reconstruction use this field; generic metadata does not
+define or override it. A delta requires `conversation_id`; a full input may omit
+it. Scope history state by the authorized organization/destination and this ID.
 
 A request carries either a full input or a delta, never both. Output is unchanged.
 An absent field is not an empty array. Preserve message order, repeated messages,
@@ -52,7 +58,7 @@ For example, the first native span is a checkpoint:
 ```json
 {
   "id": "request-1",
-  "metadata": {"gen_ai.conversation.id": "conversation-A"},
+  "conversation_id": "conversation-A",
   "input": [{"role": "user", "content": "Hello"}],
   "output": [{"role": "assistant", "content": "Hello!"}]
 }
@@ -63,7 +69,7 @@ Its successor can report only the new user message:
 ```json
 {
   "id": "request-2",
-  "metadata": {"gen_ai.conversation.id": "conversation-A"},
+  "conversation_id": "conversation-A",
   "input_delta": [{"role": "user", "content": "Tell me more"}],
   "output": [{"role": "assistant", "content": "More detail"}]
 }
@@ -74,8 +80,8 @@ An empty delta is valid when the complete preceding context is reused unchanged.
 
 ## Conversation identity and forks
 
-`gen_ai.conversation.id` identifies a stream, not the chronological order of all
-spans in a trace. Use a stable ID from the source/application that owns conversation
+`conversation_id` (OTel: `gen_ai.conversation.id`) identifies a stream, not the
+order of all spans in a trace. Use a stable ID from the source/application that owns conversation
 history. Do not invent an observer-local UUID, trace ID, or content hash when no
 conversation identity is available; use full reporting instead. This follows the
 [OTel conversation-ID guidance](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/registry/attributes/gen-ai.md).
