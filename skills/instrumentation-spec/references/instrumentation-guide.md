@@ -360,9 +360,9 @@ For the three providers that Braintrust ships built-in UI normalizers for (OpenA
 
 The span MUST capture the full input messages sent to the model in one of the following formats.
 
-[History sequences](features/history-sequences.md) defines an opt-in reporting
-protocol for sharing repeated message arrays while preserving this complete logical
-input.
+[History snapshots and deltas](features/history-sequences.md) defines optional
+append-only delta reporting with full checkpoints while preserving this complete
+logical input.
 
 #### Default: OpenAI Chat Completions format
 

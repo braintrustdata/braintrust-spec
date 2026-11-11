@@ -1,199 +1,148 @@
-# History sequences
+# History snapshots and deltas
 
-This model shares conversation history across SDKs, coding agents, the gateway,
-and backend. Each SpanOp carries its effective input; network and disk adapters
-replicate the same immutable data. Deploy backend support before clients use it;
-there is no runtime negotiation. MUST/SHOULD/MAY describe conforming implementations.
+Use the snapshot/append-only delta model in
+[OTel proposal #364](https://github.com/open-telemetry/semantic-conventions-genai/issues/364).
+Full reporting remains the default. Delta reporting is an option; slice support
+is future work. The upstream attribute is proposed, not an adopted OTel standard.
 
-## Representation
+## Fields
 
-```text
-Input    = ordinary JSON | { "$bt_history": Sequence }
-Sequence = { id: SequenceId, parts: Part[] }
-Part     = ordinary JSON | { "$bt_slice": { id: SequenceId, start: uint32, end: uint32 } }
-```
+| Meaning | OTel attribute | Braintrust-native span field |
+| --- | --- | --- |
+| Complete input / checkpoint | `gen_ai.input.messages` | `input` |
+| New messages since the preceding request | `gen_ai.input.messages_delta` | `input_delta` |
+| Current response | `gen_ai.output.messages` | `output` |
+| Conversation stream | `gen_ai.conversation.id` | `metadata["gen_ai.conversation.id"]` |
 
-IDs are nonzero random 128-bit values encoded as 32 lowercase hex characters.
-They identify immutable history snapshots, not mutable span rows. References are
-scoped to organization, destination, and trace; an ID grants no access by itself.
-The same definition may be replayed; conflicting reuse of an ID is an error.
+Native names are this spec's binding of the OTel semantics, not additional upstream
+attributes. Use each integration's established message schema consistently between
+full inputs and deltas; OTel adapters preserve the OTel message schema. Arbitrary
+native object/scalar inputs continue full reporting. Do not discard provider fields.
+There are no custom history wrappers, sequence IDs, or slice objects in this model.
 
-Only exact single-key wrappers are syntax: `$bt_history` at the input root and
-`$bt_slice` at a part root. Malformed wrappers are errors. Those shapes are reserved
-and cannot be literal data there; extra keys or nested occurrences are ordinary
-JSON. Full inputs remain supported. Tagged inputs replace the logical input and
-MUST NOT be deep-merged as application objects; omitted input preserves normal
-merge behavior. Null, empty arrays, repetitions, nested arrays, numeric precision,
-reasoning, and attachments retain their captured meanings. Materialized query
-results must not be decoded again.
+A request carries either a full input or a delta, never both. Output is unchanged.
+An absent field is not an empty array. Preserve message order, repeated messages,
+reasoning, attachments, JSON types, numeric precision, and content-capture policy.
 
-Every direct part contributes one item. A slice contributes the half-open range
-`[start, end)` of its source's **entire materialized array**, recursively resolving
-references. It never indexes the source's parts. Length is derived by summing one
-per direct item and `end - start` per slice. Use checked uint32 arithmetic and
-validate `start <= end <= source.length`; no wire length field is needed.
+## Reporting policy
 
-For example, B has four parts but five materialized items:
+In full mode, report every complete input without retaining a comparison history
+beyond ordinary pending delivery data. In delta mode, retain the preceding captured
+input and response per active conversation stream. Apply redaction, customizers,
+provider mapping, and attachment handling before comparison; freeze captured data
+rather than retaining mutable application objects.
 
-```text
-A = [a, b, c]
-B = [x, slice(A, 1, 3), y, z]   => [x, b, c, y, z]
-C = [slice(B, 1, 4)]            => [b, c, y]
-```
+Let `I` be the preceding effective input and `O` its captured response messages.
+If `I + O` is an exact prefix of the current input, report only the remaining
+messages as `input_delta`. The receiver reconstructs `I + O + input_delta`, as
+suggested by the OTel proposal. Deltas are per preceding request, not a growing
+cumulative tail repeated since the last checkpoint. Never infer a response from
+another request or append an unselected response candidate.
 
-`slice(...)` abbreviates the tagged object. Definitions form an acyclic graph.
-Reject invalid IDs, ranges, tags, overflow, cycles, or missing dependencies before
-exposing a successful span update. An empty sequence has `parts: []`.
+Otherwise report the complete current input as a checkpoint. This includes the
+first request, compaction, truncation, prompt/history edits, regeneration without
+the previous response, unknown/changed output, ambiguous ordering, and cache loss.
+This profile always starts with a full checkpoint, although upstream also permits
+putting the initial full input in the first delta. Only emit a delta when its
+captured predecessor input/output are known and the exact prefix check succeeds.
+Unknown or disabled content must not be invented to make a delta work.
 
-## Span inputs
-
-The sequence describes the actual complete array sent to the model: retained
-history with compaction/edits applied, plus new messages. `output` remains only
-the current response. A later input includes that response only if actually sent.
-Provider-native object/scalar inputs keep full reporting; do not discard fields
-to enable this array representation. Existing span identity/routing stays unchanged.
-
-First request and response:
+For example, the first native span is a checkpoint:
 
 ```json
 {
-  "id": "span-row-1", "span_id": "span-1", "root_span_id": "trace-1",
-  "input": {"$bt_history": {
-    "id": "00000000000000000000000000000001",
-    "parts": [{"role": "system", "content": "Be helpful."}, {"role": "user", "content": "Hello"}]
-  }},
+  "id": "request-1",
+  "metadata": {"gen_ai.conversation.id": "conversation-A"},
+  "input": [{"role": "user", "content": "Hello"}],
   "output": [{"role": "assistant", "content": "Hello!"}]
 }
 ```
 
-Next request, reusing that input and adding the response and new user message:
+Its successor can report only the new user message:
 
 ```json
 {
-  "id": "span-row-2", "span_id": "span-2", "root_span_id": "trace-1",
-  "input": {"$bt_history": {
-    "id": "00000000000000000000000000000002",
-    "parts": [
-      {"$bt_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}},
-      {"role": "assistant", "content": "Hello!"}, {"role": "user", "content": "Tell me more"}
-    ]
-  }}
+  "id": "request-2",
+  "metadata": {"gen_ai.conversation.id": "conversation-A"},
+  "input_delta": [{"role": "user", "content": "Tell me more"}],
+  "output": [{"role": "assistant", "content": "More detail"}]
 }
 ```
 
-Compaction is a new sequence such as `[summary, slice(previous, 2, 4), new_message]`.
-It does not mutate older histories. Explicit compaction events keep their metadata;
-the encoding does not infer why messages changed or implicitly append outputs.
+The second logical input is `[user("Hello"), assistant("Hello!"), user("Tell me more")]`.
+An empty delta is valid when the complete preceding context is reused unchanged.
 
-## Branch-local matching and resumption
+## Conversation identity and forks
 
-Keep only `(parent_id, parent_items)` for each active branch. The parent is the
-immediately preceding input **on that branch**, not the latest span by timestamp.
-A fork can share its parent's immutable value; advancing one branch does not move
-another. Producers supply the predecessor through their tracing/session context.
-If it is unknown, send the current array directly under a fresh sequence ID.
+`gen_ai.conversation.id` identifies a stream, not the chronological order of all
+spans in a trace. Use a stable ID from the source/application that owns conversation
+history. Do not invent an observer-local UUID, trace ID, or content hash when no
+conversation identity is available; use full reporting instead. This follows the
+[OTel conversation-ID guidance](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/registry/attributes/gen-ai.md).
 
-Compare the frozen current array directly with that parent. Reuse unchanged
-prefix/suffix ranges; a bounded sequence diff can find retained middle runs after
-compaction followed by append. Emit new items between slices in current order,
-preserving duplicates. Bound comparison work and use direct items when matching
-costs too much or references save no bytes. The model requires neither a persistent
-hash-to-position index nor a search across historical branches. Native append/edit
-operations may supply ranges directly if they preserve the exact captured input.
+When the application/session manager creates a fork as a new conversation stream,
+it assigns a new stable conversation ID. The first recorded request in that branch
+contains its complete effective input, including inherited context; later requests
+may use deltas within the branch. The original keeps its ID. Preserve fork lineage
+through existing trace relationships or metadata; a new ID alone does not encode it.
+Resume the same branch with its stable ID, using another checkpoint if the cache
+is unavailable. Compaction by itself does not require a new conversation ID.
 
-Capture/redaction/provider mapping/attachment handling precede comparison. Use
-structural equality preserving JSON types and precision, not identity of mutable
-application objects. Comparing complete arrays still scans their content; keeping
-one parent still uses memory proportional to its contents. Bound active branches
-and resident bytes, evicting payloads to the configured store when needed.
+If the source keeps multiple branches under one ID and no existing correlation
+makes each predecessor unambiguous, keep full reporting for those streams. A
+checkpoint at a fork does not by itself disambiguate subsequent interleaved deltas.
+The upstream proposal does not define branch/predecessor metadata; that remains an
+extension point, not something to infer from timestamps or generic span parentage.
 
-The shared cache interface is conceptual, not a required SDK API:
+## Optional state and readback
 
-```text
-encode(items, parent_id?) -> Sequence    apply(sequence) -> SequenceId
-read(id) -> items                       snapshot(id) -> all-literal Sequence with a fresh ID
-unload(id)                              // release resident data only when recoverable
-```
+Bound cached bytes and active conversations. Eviction, restart, or switching into
+delta mode starts a fresh checkpoint; switching to full mode releases comparison
+state. SDKs need no disk or backend read endpoint to support this policy. Coding
+agents may persist their active state in the existing SQLite/journal storage, but
+recovering it is an optimization, not a prerequisite for capture or reporting.
+Full-array comparison still scans history; enabling deltas has a memory/CPU cost.
 
-`encode` attaches its definition directly inside `input.$bt_history`. `apply`
-registers it without expanding every ancestor. `snapshot` creates an independent
-root; old IDs and pending references are not renamed by that operation.
+To reconstruct a request, start at its latest checkpoint, then apply each subsequent
+request's captured predecessor output and input delta in causal conversation order.
+A new checkpoint replaces that context and needs no earlier messages. Preserve the
+captured versions used by descendants; later mutations of a source span must not
+silently change an already reconstructed input.
 
-On a cache miss, `read(parent_id)` can load from the configured local store or the
-backend. Backend support MUST provide authorized lookup of the exact immutable
-history by scope and ID, returning its materialized items; HTTP routing belongs
-to the API implementation. Sequence/record lookup also supports the pointer
-readback below. Never substitute a span's subsequently updated input for an ID.
+Enable deltas only on complete, ordered streams with compatible capture/sampling
+and delivery behavior. Missing checkpoints, predecessor outputs, or ordering must
+produce an explicit unresolved-history result, never partial or guessed input.
+A producer that knows a record was lost restarts with a checkpoint. Repeated span
+updates must not append the same delta twice; existing reporting IDs, merge rules,
+replay cursors, and acknowledgements continue to apply. Preserve pending data until
+ordinary delivery requirements are met; hook capture does not wait for replay.
 
-SDKs keep a bounded in-memory parent cache and fetch from the backend on cold
-resume/eviction. Coding agents may persist that cache in their existing SQLite/
-journal storage. Loading is explicit, bounded outbound/recovery work; capture
-and model requests never wait for it. If unavailable, a complete current input can
-start a new literal root; incremental-only sources must recover their base or
-report loss. Fetching a full parent on every span can recreate quadratic network
-traffic, so neither diskless SDKs nor plugins should reload a resident parent.
+Backend queries, filters, scoring, UI, and ordinary exports observe complete logical
+inputs for both full and delta rows. Resolve dependencies outside the result page,
+and keep retained descendants reconstructable when source rows are removed.
+Storage/indexing and read caches are separate concerns. Requesting every expanded
+input may still produce quadratic response bytes; telemetry compression does not
+change model token/cache metrics. Backend support is deployed before clients;
+there is no runtime negotiation introduced here.
 
-## Pointer-based readback
+## Possible future work: slices
 
-Build a view of direct items and `pointer(sequence_id, materialized_index)` values.
-A slice contributes one pointer for each requested source position; pointers are
-internal and never add IDs to individual messages on the wire. Resolve a pointer
-by locating its position among the source's derived part offsets: a direct part
-is terminal; a slice redirects to its source at `slice.start + offset_within_part`.
-Continue until terminal, then materialize that item into the requested result.
-Do not expand an ancestor array and transplant its slices into each descendant.
+A later, mutually exclusive input attribute could describe new items plus ranges
+of the explicitly identified predecessor's **materialized history**. This could
+avoid resending retained content after compaction/editing while preserving existing
+snapshot/delta meanings. Its field name and wire shape are intentionally undefined.
 
-```text
-A = [0, 2, 3]
-B = [1, slice(A, 1, 3), 4]
-view(B) = [1, pointer(A, 1), pointer(A, 2), 4] => [1, 2, 3, 4]
-```
-
-Use an explicit stack/iteration for deep chains, memoize terminal pointers and
-loaded descriptors within bounded caches, and share ranges where useful. Resolve
-only requested positions; compaction can make entire ancestor prefixes unnecessary.
-Pointers can be processed incrementally instead of allocating all of them at once.
-Cache/index parent views or ranges to avoid repeated long-chain walks: pointers
-alone do not guarantee linear metadata traversal. Physical reads may include extra bytes, but unrelated message payloads need not
-be materialized. Detect identity/range errors and active-path cycles. A streamed
-result that later fails is an incomplete input, never a successful partial history.
-
-A fresh cache can replay source SpanOps, load the requested definition and follow
-pointers, or accept an independent snapshot. Persisted indexes/derived offsets are
-optional accelerators; data and definitions must remain recoverable. Readback has
-the same meaning locally and on the backend, which may resolve it for an SDK.
-
-## Delivery, retention, and queries
-
-Make definitions available before dependent operations, or resolve a batch in
-dependency order. Persist accepted progress only after data is recoverable. Keep
-actual pending values/dependencies for retry or repair; queued is not acknowledged.
-Existing SpanOp ordering, merge, deduplication, and route acknowledgements apply.
-Replaying a definition is idempotent but does not itself deduplicate span updates.
-
-Keep retained inputs reconstructable even if source spans are deleted or absent
-from query pages. Unload payloads only when a retained copy can supply them; release
-unused roots under normal retention/authorization/erasure rules. Compaction is not
-erasure. Storage layout and checkpoint frequency are implementation choices.
-
-Ordinary queries, predicates, search, scoring, and exports see complete logical
-inputs for both full and tagged rows. Compact exports use the same tagged input,
-with known dependencies or fresh literal snapshots so extra source spans need not
-appear as results. Returning every expanded history can still be quadratic in
-response bytes; compact reporting does not change provider token/cache metrics.
-[OTel's delta-input proposal](https://github.com/open-telemetry/semantic-conventions-genai/issues/364)
-can be adapted when its ordering/content assumptions hold; ordinary OTel consumers
-continue receiving their established complete-message format.
-
-Tests cover direct items, nested slices/pointers, compaction, branches, cold reads,
-replay, snapshots, and invalid state. Implementations additionally test real crash
-boundaries and measure CPU, memory, wire bytes, storage, and query latency.
+That extension must specify predecessor/version correlation (including forks),
+range validation, readback, retention, and a full-snapshot fallback for readers
+without slice support. A receiver must not silently ignore an unknown slice field
+and treat its messages as an append delta. Add it only if measured snapshot traffic
+justifies the extra complexity; initial implementations need no slice machinery.
 
 # SDK support
 
 ```yaml
 id: history-sequences
-name: History sequences
+name: History snapshots and deltas
 category: Tracing
 support:
   sequence-history-reporting:
