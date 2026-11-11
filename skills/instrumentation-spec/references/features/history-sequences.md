@@ -1,357 +1,193 @@
 # History sequences
 
-Conversation history is shared state. This specification defines a reversible
-representation of that state and the updates needed to replicate it. The same
-model applies in SDKs, coding agents, the gateway, and the backend, whether updates
-are sent over a network or written to storage and read back later.
+This model shares conversation history across SDKs, coding agents, the gateway,
+and backend. Each SpanOp carries its effective input; network and disk adapters
+replicate the same immutable data. Deploy backend support before clients use it;
+there is no runtime negotiation. MUST/SHOULD/MAY describe conforming implementations.
 
-The backend is deployed before producers use this representation. There is no
-runtime capability negotiation. Existing full-payload reporting remains valid.
-Normative terms MUST, SHOULD, and MAY describe implementations using this model.
-
-## Shared object model
-
-A cache contains immutable sequences, each representing an ordered JSON array.
-A sequence is composed of literal elements and slices of existing sequences:
+## Representation
 
 ```text
+Input    = ordinary JSON | { "$bt_history": Sequence }
 Sequence = { id: SequenceId, parts: Part[] }
-Part     = JsonValue
-         | { "$braintrust_slice": { id: SequenceId, start: uint32, end: uint32 } }
+Part     = ordinary JSON | { "$bt_slice": { id: SequenceId, start: uint32, end: uint32 } }
 ```
 
-`SequenceId` is a nonzero random 128-bit identifier, encoded as 32 lowercase hex
-characters in JSON. Individual messages need no identities. Ordinary parts are
-individual messages or other JSON items; each contributes exactly one element.
-An exact single-key `$braintrust_slice` object contributes the referenced
-materialized range `[start, end)`. Indexes are unsigned 32-bit integers and MUST
-satisfy `start <= end <= source.length`.
+IDs are nonzero random 128-bit values encoded as 32 lowercase hex characters.
+They identify immutable history snapshots, not mutable span rows. References are
+scoped to organization, destination, and trace; an ID grants no access by itself.
+The same definition may be replayed; conflicting reuse of an ID is an error.
 
-The materialized length is derived: sum one for each ordinary item and
-`end - start` for each slice. It is not transmitted. Computing it does not require
-expanding referenced contents. Implementations MAY cache this derived length and
-part offsets; they MUST check unsigned 32-bit arithmetic rather than wrap on overflow.
-An empty sequence is `{id, parts: []}`.
+Only exact single-key wrappers are syntax: `$bt_history` at the input root and
+`$bt_slice` at a part root. Malformed wrappers are errors. Those shapes are reserved
+and cannot be literal data there; extra keys or nested occurrences are ordinary
+JSON. Full inputs remain supported. Tagged inputs replace the logical input and
+MUST NOT be deep-merged as application objects; omitted input preserves normal
+merge behavior. Null, empty arrays, repetitions, nested arrays, numeric precision,
+reasoning, and attachments retain their captured meanings. Materialized query
+results must not be decoded again.
 
-At the top level of each part, an exact single-key `$braintrust_slice` object
-always denotes a slice; that shape is reserved and cannot represent literal data.
-Malformed slice wrappers are errors. Objects with additional keys and reserved-
-looking objects nested inside a message remain ordinary data. A nested array is
-one literal item, not a group of messages to flatten.
+Every direct part contributes one item. A slice contributes the half-open range
+`[start, end)` of its source's **entire materialized array**, recursively resolving
+references. It never indexes the source's parts. Length is derived by summing one
+per direct item and `end - start` per slice. Use checked uint32 arithmetic and
+validate `start <= end <= source.length`; no wire length field is needed.
 
-Slice indexes MUST address the referenced sequence's entire materialized array,
-not positions in its `parts` list. This applies recursively when the referenced
-sequence contains slices. A slice can start/end inside another slice and cross
-several parts:
+For example, B has four parts but five materialized items:
 
 ```text
-A.parts = [a, b, c]                           => [a, b, c]
-B.parts = [x, slice(A, 1, 3), y, z]           => [x, b, c, y, z]
-C.parts = [slice(B, 1, 4)]                    => [b, c, y]
+A = [a, b, c]
+B = [x, slice(A, 1, 3), y, z]   => [x, b, c, y, z]
+C = [slice(B, 1, 4)]            => [b, c, y]
 ```
 
-B has four parts but five materialized items. C takes materialized positions
-1 through 3, crossing B's slice and its following literal item. `slice(...)` is
-shorthand here for the `$braintrust_slice` object above. Repeated equal messages
-remain separate occurrences; nested fields, reasoning, attachment references,
-and numeric precision retain their captured meanings.
+`slice(...)` abbreviates the tagged object. Definitions form an acyclic graph.
+Reject invalid IDs, ranges, tags, overflow, cycles, or missing dependencies before
+exposing a successful span update. An empty sequence has `parts: []`.
 
-Sequences form an immutable directed acyclic graph. An ID denotes one definition;
-it MUST NOT be reused for a different definition. Reapplying an identical
-definition is a no-op. Conflicting definitions, cycles, malformed tags, invalid
-indexes, and derived-length overflow are errors.
+## Span inputs
 
-All references are interpreted within the cache's identity domain, supplied by
-its owner. Reporting domains MUST be isolated by organization, destination, and
-trace. A sequence ID is not authorization. Native session/conversation identifiers
-and span parentage keep their existing meanings; neither determines sequence
-ancestry. Separate domains can share a sequence's contents only by copying them
-under new local IDs.
+The sequence describes the actual complete array sent to the model: retained
+history with compaction/edits applied, plus new messages. `output` remains only
+the current response. A later input includes that response only if actually sent.
+Provider-native object/scalar inputs keep full reporting; do not discard fields
+to enable this array representation. Existing span identity/routing stays unchanged.
 
-## Full and sequenced input shapes
-
-The existing `input` field accepts either its ordinary JSON payload or a tagged
-sequence representation. The reserved shape is an object with exactly one key:
-
-```text
-SequencedInput = { "$braintrust_history": Sequence }
-```
-
-At the root of `input`, an exact single-key `$braintrust_history` object always
-denotes a sequence and is validated as such; that shape is reserved. All other
-values retain their existing full-payload behavior. Objects with additional keys
-and reserved-looking objects nested inside message payloads are ordinary data.
-Malformed reserved wrappers are errors, not full-payload fallbacks. Materialized
-query results are logical data and MUST NOT be decoded a second time.
-
-The sequence describes the complete array-valued input sent to this LLM request:
-retained session messages, compaction/edits, and new messages. Its definition lives
-directly in that SpanOp's `input`. `output` contains only this request's response
-and keeps its existing representation. The next input includes a previous response
-only when it was actually part of that captured request.
-
-For example, the first span carries its initial history and its response:
+First request and response:
 
 ```json
 {
-  "id": "span-row-1",
-  "span_id": "span-1",
-  "root_span_id": "trace-1",
-  "output": [
-    {"role": "assistant", "content": "Hello!"}
-  ],
-  "input": {
-    "$braintrust_history": {
-      "id": "00000000000000000000000000000001",
-      "parts": [
-        {"role": "system", "content": "Be helpful."},
-        {"role": "user", "content": "Hello"}
-      ]
-    }
-  }
+  "id": "span-row-1", "span_id": "span-1", "root_span_id": "trace-1",
+  "input": {"$bt_history": {
+    "id": "00000000000000000000000000000001",
+    "parts": [{"role": "system", "content": "Be helpful."}, {"role": "user", "content": "Hello"}]
+  }},
+  "output": [{"role": "assistant", "content": "Hello!"}]
 }
 ```
 
-The next span carries its own sequence, reusing the preceding input:
+Next request, reusing that input and adding the response and new user message:
 
 ```json
 {
-  "id": "span-row-2",
-  "span_id": "span-2",
-  "root_span_id": "trace-1",
-  "input": {
-    "$braintrust_history": {
-      "id": "00000000000000000000000000000002",
-      "parts": [
-        {
-          "$braintrust_slice": {
-            "id": "00000000000000000000000000000001",
-            "start": 0,
-            "end": 2
-          }
-        },
-        {"role": "assistant", "content": "Hello!"},
-        {"role": "user", "content": "Tell me more"}
-      ]
-    }
-  }
+  "id": "span-row-2", "span_id": "span-2", "root_span_id": "trace-1",
+  "input": {"$bt_history": {
+    "id": "00000000000000000000000000000002",
+    "parts": [
+      {"$bt_slice": {"id": "00000000000000000000000000000001", "start": 0, "end": 2}},
+      {"role": "assistant", "content": "Hello!"}, {"role": "user", "content": "Tell me more"}
+    ]
+  }}
 }
 ```
 
-Reading the second input yields four ordinary messages. Its ID names that
-whole array, so future spans can slice it without knowing the original location
-of each message. A compaction can define `[summary, slice(second, 2, 4)]`;
-a branch can reference an older sequence. Responses first join reusable history
-as literals in subsequent inputs; they are not implicitly appended from `output`.
+Compaction is a new sequence such as `[summary, slice(previous, 2, 4), new_message]`.
+It does not mutate older histories. Explicit compaction events keep their metadata;
+the encoding does not infer why messages changed or implicitly append outputs.
 
-Supplying either a full or tagged input replaces the logical input under the
-ordinary span update rules. The tagged wrapper and its parts MUST NOT be deep-merged
-as application input objects. An omitted input retains the previous value; `null`
-and an empty array remain distinct. Validate/register a compact definition with
-its row update before exposing either. Legacy and tagged rows can coexist.
+## Branch-local matching and resumption
 
-The sequence represents an array. Provider-native object/scalar inputs remain
-full payloads until a representation preserves all their fields. Implementations
-MUST NOT drop native fields merely to enable compact reporting.
+Keep only `(parent_id, parent_items)` for each active branch. The parent is the
+immediately preceding input **on that branch**, not the latest span by timestamp.
+A fork can share its parent's immutable value; advancing one branch does not move
+another. Producers supply the predecessor through their tracing/session context.
+If it is unknown, send the current array directly under a fresh sequence ID.
 
-## Uniform cache interface
+Compare the frozen current array directly with that parent. Reuse unchanged
+prefix/suffix ranges; a bounded sequence diff can find retained middle runs after
+compaction followed by append. Emit new items between slices in current order,
+preserving duplicates. Bound comparison work and use direct items when matching
+costs too much or references save no bytes. The model requires neither a persistent
+hash-to-position index nor a search across historical branches. Native append/edit
+operations may supply ranges directly if they preserve the exact captured input.
 
-Every participant uses the same conceptual interface:
+Capture/redaction/provider mapping/attachment handling precede comparison. Use
+structural equality preserving JSON types and precision, not identity of mutable
+application objects. Comparing complete arrays still scans their content; keeping
+one parent still uses memory proportional to its contents. Bound active branches
+and resident bytes, evicting payloads to the configured store when needed.
 
-```text
-encode(array) -> Sequence
-apply(sequence) -> SequenceId
-read(sequence_id) -> JsonValue[]
-snapshot(sequence_id) -> Sequence
-unload(sequence_id)
-```
-
-`encode` registers a captured array and returns its sequence definition, reusing
-matching ranges when beneficial. The caller wraps that definition in
-`$braintrust_history` in its SpanOp's `input`. `apply` registers an incoming
-definition without needing to expand its full array. `read` materializes that array. `snapshot` returns an
-equivalent all-literal definition under a fresh ID, requiring no earlier state.
-The caller can wrap that snapshot as a span input and use its new ID for subsequent
-references. A snapshot does not rename old IDs or repair outstanding references to
-them; those dependencies must be retained or their pending operations re-encoded.
-
-`unload` releases resident payloads only when they remain retrievable from storage
-or another retained copy; otherwise it must refuse while retained roots need them.
-Missing state is an error, never an empty or partially reconstructed array. Both
-sides use these operations; persistence and transport are separate adapters.
-Implementations may eagerly or lazily materialize data. A read adapter supplies
-`load(sequence_id) -> Sequence` within the same identity domain. It loads the
-definition from memory, disk, or a scoped remote read. An in-memory-only adapter reports unavailable state rather than fetching implicitly.
-Matching never initiates hidden remote reads. A persistence adapter indexes each
-scoped ID to its immutable definition or record position; it must not resolve it
-through a span's mutable current input, which may have been updated since capture.
-
-### Reading a sequence chain
-
-`read(id)` reconstructs the entire array; the same operation can accept an optional
-half-open range for consumers needing only part of it. The cache obtains missing
-definitions through `load`, validates their identity and structure, and retains
-only a bounded working set. A sequence ID is a lookup key for this adapter, not
-an instruction to replay all earlier spans or search by timestamps.
-
-To read `[start, end)` from a sequence:
-
-1. Load its definition if absent. Validate the requested range against its
-   derived length. Track the active dependency path to detect cycles; reject missing,
-   conflicting, or invalid definitions without returning a successful partial input.
-2. Walk its parts in order, tracking cumulative element offsets. Each literal
-   item contributes one; each slice contributes `end - start`. Sum them with
-   checked arithmetic to derive the sequence's materialized length.
-3. Skip parts outside the requested range. For an overlapping literal, emit only
-   that one item. For an overlapping slice starting at `source_start`,
-   translate the overlap's offsets within that part to
-   `[source_start + overlap_start, source_start + overlap_end)` in the source.
-   Load that source and repeat for that range, preserving output order.
-4. Emit the resulting messages into the caller's array or iterator. On successful
-   completion, verify the emitted count. Use an explicit traversal stack for long
-   chains, share loaded descriptors, and avoid expanding every ancestor's array.
-   A streaming consumer must observe a later read error as a failed input.
-
-For `C.parts = [summary, slice(B, 2, 4)]` and
-`B.parts = [slice(A, 0, 2), assistant, user]`, reading C yields
-`[summary, assistant, user]`. It visits C and the tail of B; A's discarded prefix
-is not materialized or fetched for its contents. Previously accepted definitions
-remain subject to validation; range-selective readback is not permission to accept
-an invalid dependency graph. Physical I/O granularity is the adapter's concern.
-
-A persisted fingerprint index can restore matching state without reading messages.
-If it is absent, the same traversal can fingerprint each emitted element to build
-the requested root's index while rebuilding its contents. An available parent index
-can instead supply copied fingerprint ranges plus hashes of new literals. Neither
-approach requires retaining full arrays or indexes for every ancestor. Metadata-only
-restoration supports matching against a new complete input; actually reading old
-contents still requires accessible literal data.
-
-A fresh client can restore by replaying original SpanOps in dependency order, or
-by loading a requested definition and following its dependencies through the read
-adapter. Replay registers the sequences and rebuilds their indexes; it need not
-expand every historical input. A self-contained literal snapshot needs no preceding
-records. An SDK that has lost its cache and has no remote read adapter can establish
-a new root from the next complete observed input instead of recovering old data.
-
-### Finding reusable ranges
-
-The cache can retain an ordered fingerprint array alongside each candidate root:
-`(sequence_id, length, serializer_version, fingerprints[])`. It need not retain
-old message contents or mirror every historical sequence tree to match new input.
-Fingerprint position is the message's position in that named sequence.
-
-Use SHA-256 over a domain separator `braintrust.history.element.v1` followed by a
-zero byte and a complete lossless UTF-8 JSON serialization of the captured element.
-Capture policy, provider mapping, redaction, and attachment conversion happen
-before interning. Values MUST be frozen for capture; reference equality on mutable
-application objects is insufficient. Serializer changes invalidate the index.
-Harmless encoding differences can reduce reuse, but omitted captured fields or
-lossy numeric conversion must not hide a changed value. Fingerprints are internal
-matching metadata, not message identities sent in span operations. Matching assumes SHA-256
-collision resistance; applications requiring collision-free equality must compare
-retained values or use trustworthy source change information instead.
-
-For a new array, compute its fingerprints, find a matching contiguous run, and
-emit current literals before/after a slice of the matched parent. For example:
+The shared cache interface is conceptual, not a required SDK API:
 
 ```text
-cached H: [h(A), h(B), h(C), h(D)]
-current:  [Summary, C, D, E]
-parts:    [Summary, slice(H, 2, 4), E]
+encode(items, parent_id?) -> Sequence    apply(sequence) -> SequenceId
+read(id) -> items                       snapshot(id) -> all-literal Sequence with a fresh ID
+unload(id)                              // release resident data only when recoverable
 ```
 
-A simple implementation indexes parent fingerprints by position and extends equal
-candidates. It MUST bound search work, including repeated-digest candidates; it
-can use the best run found or fall back to literals. Prefer the longest run found,
-then the lowest parent start, then the lowest current start. Multiple runs are
-allowed if they preserve current order and occurrences. Emit literals if slices
-would cost more bytes. Prefix/suffix matching alone misses the example above.
+`encode` attaches its definition directly inside `input.$bt_history`. `apply`
+registers it without expanding every ancestor. `snapshot` creates an independent
+root; old IDs and pending references are not renamed by that operation.
 
-`apply` can build the same index by hashing literals and copying fingerprint
-ranges from slice sources, without reading old message contents. Persisted index
-metadata can also be restored directly. This index has the same meaning everywhere;
-it is independent of which participant holds the cache or how payloads are stored.
+On a cache miss, `read(parent_id)` can load from the configured local store or the
+backend. Backend support MUST provide authorized lookup of the exact immutable
+history by scope and ID, returning its materialized items; HTTP routing belongs
+to the API implementation. Sequence/record lookup also supports the pointer
+readback below. Never substitute a span's subsequently updated input for an ID.
 
-A bounded cache of current roots costs one fixed-size digest per element rather
-than all prior message bytes. Evicted matching entries cause literal fallback for
-the next complete observed array. Hashing complete arrays still scans their content
-and can accumulate quadratic CPU work across a growing conversation. Sources with
-trustworthy append/replace operations can update the shared model incrementally.
-If only increments are available and their base is lost, obtain complete source
-state or report the loss; fingerprints alone cannot recover content.
+SDKs keep a bounded in-memory parent cache and fetch from the backend on cold
+resume/eviction. Coding agents may persist that cache in their existing SQLite/
+journal storage. Loading is explicit, bounded outbound/recovery work; capture
+and model requests never wait for it. If unavailable, a complete current input can
+start a new literal root; incremental-only sources must recover their base or
+report loss. Fetching a full parent on every span can recreate quadratic network
+traffic, so neither diskless SDKs nor plugins should reload a resident parent.
 
-## Replication, persistence, and lifetime
+## Pointer-based readback
 
-The SpanOp itself carries the new history state. A network stream sends span
-operations; persistence records the same operations and replays their tagged
-inputs into the same cache. Batching, authentication, acknowledgements, and storage
-layout belong to existing adapters, not a second history envelope or value stream.
+Build a view of direct items and `pointer(sequence_id, materialized_index)` values.
+A slice contributes one pointer for each requested source position; pointers are
+internal and never add IDs to individual messages on the wire. Resolve a pointer
+by locating its position among the source's derived part offsets: a direct part
+is terminal; a slice redirects to its source at `slice.start + offset_within_part`.
+Continue until terminal, then materialize that item into the requested result.
+Do not expand an ancestor array and transplant its slices into each descendant.
 
-Adapters must preserve these rules:
+```text
+A = [0, 2, 3]
+B = [1, slice(A, 1, 3), 4]
+view(B) = [1, pointer(A, 1), pointer(A, 2), 4] => [1, 2, 3, 4]
+```
 
-- A referenced sequence is available before a dependent operation is exposed.
-  Operations in a batch may be resolved in dependency order; otherwise restore
-  missing source operations or re-encode pending arrays as all-literal snapshots.
-  Successfully queueing an operation does not establish remote acceptance.
-- Validate tagged sequence definitions before exposing
-  the corresponding row change or advancing durable progress.
-- Repeated definitions are idempotent. Span operations retain their existing
-  ordering, merge, retry, and acknowledgement semantics. A replayed definition
-  does not itself suppress or reorder a span operation.
-- Retain actual data needed to retry/repair pending operations. Fingerprints do
-  not substitute for content. Metadata and payloads may be unloaded independently,
-  but retained spans must remain reconstructable. A replay starting with an empty
-  cache must include source dependencies or self-contained snapshot operations.
-- Release unused roots under existing retention rules. Deleting a source span must
-  not break another retained span's history. Compaction changes a new array; it
-  does not erase older retained values. Existing authorization and explicit
-  content-erasure policies apply to shared data too.
+Use an explicit stack/iteration for deep chains, memoize terminal pointers and
+loaded descriptors within bounded caches, and share ranges where useful. Resolve
+only requested positions; compaction can make entire ancestor prefixes unnecessary.
+Pointers can be processed incrementally instead of allocating all of them at once.
+Cache/index parent views or ranges to avoid repeated long-chain walks: pointers
+alone do not guarantee linear metadata traversal. Physical reads may include extra bytes, but unrelated message payloads need not
+be materialized. Detect identity/range errors and active-path cycles. A streamed
+result that later fails is an incomplete input, never a successful partial history.
 
-An SDK can keep a bounded matching index and pending operations in memory, unload
-acknowledged payloads, and establish new literal roots after eviction/restart.
-This adds no durability beyond its existing queue. Coding agents can persist
-operations and active indexes in their existing SQLite/journal storage and restore
-a bounded working set. Persist active fingerprint changes incrementally rather
-than copying entire vectors per span. No extra files or live-path journal reads
-are required. Recovery/outbound replication remain independent of hook capture;
-each route establishes its own accepted progress.
+A fresh cache can replay source SpanOps, load the requested definition and follow
+pointers, or accept an independent snapshot. Persisted indexes/derived offsets are
+optional accelerators; data and definitions must remain recoverable. Readback has
+the same meaning locally and on the backend, which may resolve it for an SDK.
 
-Backend storage can index shared segments instead of replaying all historical
-operations per query. The model does not prescribe tables, trees, or checkpoint
-frequency. Snapshots and incremental history definitions represent the same arrays
-and can be converted without changing the logical span data.
+## Delivery, retention, and queries
 
-## Reporting and queries
+Make definitions available before dependent operations, or resolve a batch in
+dependency order. Persist accepted progress only after data is recoverable. Keep
+actual pending values/dependencies for retry or repair; queued is not acknowledged.
+Existing SpanOp ordering, merge, deduplication, and route acknowledgements apply.
+Replaying a definition is idempotent but does not itself deduplicate span updates.
 
-Capture remains complete: existing consumers MUST observe the full logical span
-input, whether its stored `input` is full JSON or a tagged sequence. Output capture and reads
-retain their existing behavior. Predicates, search, scoring, and ordinary exports
-evaluate the reconstructed value. Resolving a history must not depend on its source span appearing in the same
-query page. Legacy rows and compact rows can coexist in one trace.
+Keep retained inputs reconstructable even if source spans are deleted or absent
+from query pages. Unload payloads only when a retained copy can supply them; release
+unused roots under normal retention/authorization/erasure rules. Compaction is not
+erasure. Storage layout and checkpoint frequency are implementation choices.
 
-A compact export returns ordinary spans with tagged `input` objects referencing
-state known to its consumer or substituting self-contained snapshot definitions
-with fresh IDs. This preserves which spans belong to the result set; source spans
-need not be added as extra results. The consumer registers those definitions and uses the same read operation.
+Ordinary queries, predicates, search, scoring, and exports see complete logical
+inputs for both full and tagged rows. Compact exports use the same tagged input,
+with known dependencies or fresh literal snapshots so extra source spans need not
+appear as results. Returning every expanded history can still be quadratic in
+response bytes; compact reporting does not change provider token/cache metrics.
+[OTel's delta-input proposal](https://github.com/open-telemetry/semantic-conventions-genai/issues/364)
+can be adapted when its ordering/content assumptions hold; ordinary OTel consumers
+continue receiving their established complete-message format.
 
-The format applies equally to SDKs, coding agents, and gateway-owned spans. Existing
-ownership of exported span inputs remains unchanged. It does not infer that one
-span's output belongs in the next span's input. The actual next captured array is
-authoritative. Provider token/cache metrics remain independent of telemetry size.
-
-[OTel issue #364](https://github.com/open-telemetry/semantic-conventions-genai/issues/364)
-proposes append-only message deltas and full checkpoints on non-append changes.
-This shared sequence model also expresses compaction and branching explicitly.
-Ordinary OTel output retains its established complete-message format unless its
-consumer supports a compact representation; conversation IDs retain their meaning.
-
-The sequence vectors and cache tests exercise round-trip span reconstruction,
-matching without old contents, selective chain readback, reserved shapes, mixed full/compact
-updates, restart/replay, missing state, and invalid ranges. Implementations must
-additionally validate storage/transport crash boundaries and measure matching CPU,
-queue memory, ingress bytes, physical storage, and query cost. Requesting every expanded history can
-still produce quadratic response bytes; a compact export avoids those repetitions.
+Tests cover direct items, nested slices/pointers, compaction, branches, cold reads,
+replay, snapshots, and invalid state. Implementations additionally test real crash
+boundaries and measure CPU, memory, wire bytes, storage, and query latency.
 
 # SDK support
 
