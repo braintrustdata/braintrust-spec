@@ -321,7 +321,7 @@ support:
     dotnet: "no"
     go: "no"
     java: "no"
-    js: "partial"
+    js: "yes"
     python: "yes"
     ruby: "no"
     rust: "no"
@@ -362,7 +362,7 @@ support:
     go: "no"
     java: "no"
     js: "yes"
-    python: "partial"
+    python: "yes"
     ruby: "no"
     rust: "no"
   rubric-scores:
