@@ -9,6 +9,13 @@ Attachment discovery, upload, retry, and fallback behavior is defined in
 [Attachments](attachments.md). Embedding APIs have an additional contract in
 [Embedding APIs](embeddings.md).
 
+Voice conversation structure and session recordings follow
+[Audio traces](audio-traces.md). Its framework `stt` and `tts` spans are `task`
+wrappers. Provider transcription and speech-generation calls beneath them
+remain `llm` spans and use this document's canonical media payloads. Framework
+fallback `llm` children follow the same payload contract; the audio spec defines
+when the framework emits them or defers to a provider integration.
+
 Decision APIs that locate objects in images use the
 [decision span box contract](decision-spans.md#image-boxes), including when a
 call mixes boxes with other question types.
