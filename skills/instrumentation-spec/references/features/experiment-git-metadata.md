@@ -366,7 +366,7 @@ category: Metadata
 support:
   explicit-repo-info:
     dotnet: "yes"
-    go: "no"
+    go: "yes"
     java: "no"
     js: "yes"
     python: "yes"

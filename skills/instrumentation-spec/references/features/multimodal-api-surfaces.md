@@ -354,7 +354,7 @@ category: Multimodal
 support:
   multimodal-api-surfaces:
     dotnet: "no"
-    go: "partial"
+    go: "no"
     java: "partial"
     js: "partial"
     python: "partial"
