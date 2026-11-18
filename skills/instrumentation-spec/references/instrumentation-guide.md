@@ -8,6 +8,7 @@ This guide covers:
 
 - **LLM provider APIs** — direct calls to OpenAI, Anthropic, Google (Gemini), and other model providers
 - **Framework integrations** — LangChain, Vercel AI SDK, LiteLLM, agent frameworks, and similar
+- **Voice frameworks** — active audio conversations, speech, and model operations, specified in [Audio traces](features/audio-traces.md)
 - **MCP server libraries** — server-side request and notification processing, including tool calls, prompt retrievals, and resource reads, specified in [MCP server instrumentation](features/mcp-servers.md)
 - **Application logging** — explicit severity methods and opt-in adapters, specified in [Application logging](features/application-logging.md)
 
@@ -18,11 +19,19 @@ auto-instrumentation. It does NOT cover the Braintrust evaluation/scoring APIs
 
 ### Auto-instrumentation eligibility
 
-Provider and framework auto-instrumentation MUST be limited to APIs that deliver
-the operation's result through the original invocation or its returned stream.
+Except for active voice sessions described below, provider and framework
+auto-instrumentation MUST be limited to APIs that deliver the operation's result
+through the original invocation or its returned stream.
 Ordinary async/await calls and streaming responses are eligible, as are agentic
 calls that execute the tool-use loop and return or stream its result within that
 invocation. Eligibility does not depend on how long a call takes.
+
+Voice-framework integrations MAY observe operations and events within an active
+audio session as specified in [Audio traces](features/audio-traces.md), including
+speech, transcript, model-response, synthesis, and tool events delivered through
+framework callbacks. This allowance covers the ongoing conversation; it does
+not authorize observing detached jobs or tasks through their separate
+submission, polling, retrieval, webhook, or listener lifecycles.
 
 Auto-instrumentation MUST NOT instrument APIs or request modes that submit work
 for separate execution and expose completion through a separate lifecycle. This
@@ -973,6 +982,9 @@ When an instrumented request or response contains inline binary media (images, P
 Dedicated image, audio, OCR, video, and prediction endpoints follow
 [Multimodal API surfaces](features/multimodal-api-surfaces.md). Embedding APIs
 follow [Embedding APIs](features/embeddings.md).
+Voice conversations and their session recordings follow
+[Audio traces](features/audio-traces.md); provider model calls within those
+conversations retain the applicable provider payload and attachment contracts.
 Typed extraction APIs, including extraction from images, follow
 [Extraction spans](features/extraction-spans.md).
 
@@ -1136,6 +1148,17 @@ These metrics SHOULD be captured when the provider reports them. They are not pr
 ## Framework Integration Principles
 
 Braintrust SDKs integrate with higher-level frameworks that wrap LLM provider APIs.
+
+### Voice frameworks
+
+Voice-framework operations follow [Audio traces](features/audio-traces.md).
+Their `stt`, `llm_response`, and `tts` spans are `task` wrappers. When the
+provider has a known Braintrust integration, the framework MUST defer to it
+whether enabled or disabled. Otherwise, the framework emits a child `llm` span
+when it exposes operation data, with a `<framework>.` name prefix. Wrappers
+MUST NOT record token usage, cost, or model timing metrics; they record their
+own start/end timing. These audio-specific span rules take precedence over
+the generic framework span structures below for voice-framework operations.
 
 ### Completion-style frameworks
 
