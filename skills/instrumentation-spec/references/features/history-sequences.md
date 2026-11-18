@@ -96,8 +96,33 @@ is unavailable. Compaction by itself does not require a new conversation ID.
 If the source keeps multiple branches under one ID and no existing correlation
 makes each predecessor unambiguous, keep full reporting for those streams. A
 checkpoint at a fork does not by itself disambiguate subsequent interleaved deltas.
-The upstream proposal does not define branch/predecessor metadata; that remains an
-extension point, not something to infer from timestamps or generic span parentage.
+Do not treat chronological order between independent branches as a history dependency.
+
+## Ordering
+
+Reuse existing trace/span identities, parentage, and source start timestamps with
+`metadata.conversation_id`; this profile adds no grouping or predecessor field.
+Preserve the coding-agent hierarchy: a session trace contains turns, which contain
+message spans. Parentage supplies execution scope; it need not chain each message
+to the previous message or change the reported hierarchy.
+
+For a sequential conversation, order history-bearing model requests by source start
+time within that hierarchy, where source clocks and timestamp precision make the
+sequence unambiguous. Producers must select the same preceding request when
+computing deltas. Server arrival order, export order, and span completion order do
+not define history order. Parallel tool spans do not advance the model-request
+history; their results appear in the next request's delta in actual input order.
+
+Timestamps and shared parentage alone do not prove that concurrent model requests
+consume each other's output. Use full snapshots when existing metadata cannot
+establish a unique causal sequence, including ambiguous timestamp ties or clocks.
+Do not break ties with arbitrary span IDs. Complete capture and delivery remain
+prerequisites; these fields cannot prove that no intermediate request was lost.
+
+Receivers must accommodate out-of-order delivery. A late earlier request requires
+invalidating and recomputing affected derived histories up to the next independent
+checkpoint. Histories whose dependencies or ordering remain uncertain are unresolved,
+not permanently appended according to arrival order.
 
 ## Optional state and readback
 
