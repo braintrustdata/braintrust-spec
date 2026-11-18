@@ -1,10 +1,10 @@
 # Audio traces
 
-This document defines audio trace schema version `3.0.0` for voice conversations, covering both the conversation users experience and the operations that produce it.
+This document defines audio trace schema version `3.1.0` for voice conversations, covering both the conversation users experience and the operations that produce it.
 
 ## Overview
 
-A `session` span contains the conversation, recordings, and shared audio timeline. Speech spans describe audio activity; transcription, model-response, synthesis, and tool spans describe the associated operations. Links associate these activities, while integration-specific spans and `contrib.<integration>.*` metadata capture additional framework behavior.
+A `session` span contains the conversation, recordings, and shared audio timeline. Speech spans describe audio activity; transcription, end-of-utterance waiting, model-response, synthesis, and tool spans describe the associated operations. Links associate these activities, while integration-specific spans and `contrib.<integration>.*` metadata capture additional framework behavior.
 
 The schema covers three common conversation patterns:
 
@@ -29,32 +29,35 @@ User     __________/|\|/|\|/|______________________________
 
 ```text
 session [S] : task                              0.0–5.0s
-│  audio.schema.version: "3.0.0"
+│  audio.schema.version: "3.1.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
 │  audio.segments: part-0 → call.ogg; session-input → channel 0, agent-output → channel 1
 │  audio.timeline.origin_unix_ms: shared session epoch
 │
-├─ user_turn [UT1] : task                       1.0–2.0s
+├─ user_turn [UT1] : task                       1.0–2.5s
 │  │  metadata: { "turn.id": "UT1" }
 │  │  input: [{ role: "user", content: "Where is my order?" }]
 │  │  audio.selections: [1.0–2.0s]
 │  ├─ user_speech [U1] : task                   1.0–2.0s
 │  │    audio.source_id: session-input
 │  │    audio.selections: [1.0–2.0s]
-│  └─ stt [ST1] : task                         1.0–2.0s
-│     │  output: "Where is my order?"
-│     │  links: transcribes → U1
-│     └─ Transcription [ST1L] : llm             1.0–2.0s  # From OpenAI SDK instrumentation
+│  ├─ stt [ST1] : task                         1.0–2.3s
+│  │  │  output: "Where is my order?"
+│  │  │  links: transcribes → U1
+│  │  └─ Transcription [ST1L] : llm             1.0–2.3s  # From OpenAI SDK instrumentation
+│  └─ eou_wait [E1] : task                     2.0–2.5s
+│       metadata: { "turn.id": "UT1", "eou.outcome": "committed" }
+│       audio.source_id: session-input
 │
-└─ agent_turn [AT1] : task                      2.0–5.0s
+└─ agent_turn [AT1] : task                      2.5–5.0s
    │  metadata: { "turn.id": "AT1", "turn.reply_to": "UT1" }
-   ├─ llm_response [M1] : task                 2.0–3.0s
+   ├─ llm_response [M1] : task                 2.5–3.0s
    │  │  input: "Where is my order?"
    │  │  output: "It arrives Friday."
    │  │  links: uses_context → ST1
-   │  └─ Chat Completion [M1L] : llm           2.0–3.0s   # From OpenAI SDK instrumentation
+   │  └─ Chat Completion [M1L] : llm           2.5–3.0s   # From OpenAI SDK instrumentation
    ├─ tts [TT1] : task                         3.0–4.0s
    │  │  input: "It arrives Friday."
    │  │  links: generated_by → M1
@@ -86,7 +89,7 @@ User     __________/|\|/|\|/|______________________________
 
 ```text
 session [S] : task                              0.0–5.0s
-│  audio.schema.version: "3.0.0"
+│  audio.schema.version: "3.1.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -142,7 +145,7 @@ Overlap                    <---->  3–4s
 
 ```text
 session [S] : task                              0.0–10.0s
-│  audio.schema.version: "3.0.0"
+│  audio.schema.version: "3.1.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -204,7 +207,7 @@ In this example, framework turns group transcript events and can overlap. Speech
 
 ```text
 session [S] : task                              0.0–7.0s
-│  audio.schema.version: "3.0.0"
+│  audio.schema.version: "3.1.0"
 │  audio.sources: session-input, agent-output
 │  audio.segments: part-0 → call.ogg; session-input → channel 0, agent-output → channel 1
 │  audio.timeline.origin_unix_ms: shared session epoch
@@ -249,7 +252,7 @@ The audio trace is rooted under a `session` span. This session span may be the r
 
 ```text
 session : task [1]
-│  metadata["audio.schema.version"]: "3.0.0"
+│  metadata["audio.schema.version"]: "3.1.0"
 │  metadata["audio.sources"]?: map<string, AudioSource>
 │  metadata["audio.participants"]?: map<string, AudioParticipant>
 │  metadata["audio.speakers"]?: map<string, AudioSpeaker>
@@ -303,6 +306,7 @@ session : task [1]
 │  ├─ stt : task [0..n]
 │  │  └─ <provider operation> or <framework>.stt : llm [0..n]
 │  ├─ transcript_received : task [0..n]
+│  ├─ eou_wait : task [0..n]
 │  └─ <framework operation> [0..n]
 │
 ├─ agent_turn : task [0..n]                     framework-established grouping
@@ -317,6 +321,12 @@ session : task [1]
 │  ├─ tts : task [0..n]
 │  │  └─ <provider operation> or <framework>.tts : llm [0..n]
 │  └─ <framework operation> [0..n]
+│
+├─ eou_wait : task [0..n]                       without a turn container
+│    metrics.start / end: last speech end → outcome, or observation cutoff if unfinished
+│    metadata["eou.outcome"]?: "committed" | "user_resumed" | "dropped"
+│    metadata["audio.source_id"]?: source ID
+│    metadata["audio.participant_ids"]?: participant IDs
 │
 ├─ transcript_received : task [0..n]
 │    output: recognized messages
@@ -356,7 +366,7 @@ The whole call, including recordings and the shared audio timeline.
 
 ```text
 span_attributes: { name: "session", type: "task" }
-metadata["audio.schema.version"]: "3.0.0"
+metadata["audio.schema.version"]: "3.1.0"
 metadata["audio.sources"]?: map<string, AudioSource>
 metadata["audio.participants"]?: map<string, AudioParticipant>
 metadata["audio.speakers"]?: map<string, AudioSpeaker>
@@ -371,7 +381,7 @@ A 75-second order-support call with two users sharing a microphone, captured as 
 ```js
 // Metadata on the session span; attachments live in its input.audio map.
 {
-  "audio.schema.version": "3.0.0",
+  "audio.schema.version": "3.1.0",
   "audio.sources": {
     "session-input": { label: "Agent input audio" },
     "agent-output": { label: "Agent audio" }
@@ -540,6 +550,65 @@ agent_speech [A1] : task    3.5–5.0s
   links: generated_by → TT1
     context: traceId=TRACE, spanId=TT1, traceFlags=1
     attributes["braintrust.relationship.type"]: "generated_by"
+```
+
+### `eou_wait`
+
+The wait to decide whether the user has finished their turn. Includes silence detection, transcription finalization, and turn analysis when they gate that decision.
+
+- Represents an observed wait anchored to the end of user speech.
+- A child of the owning `user_turn`, or `session` when turn membership is unknown.
+- Repeated turn evaluations during the same pause belong to one wait. Resumed speech ends that wait; a later pause may have another.
+- May overlap `stt` and `llm_response`. Model execution has its own spans and metrics.
+- Detector spans have their own execution intervals, which may extend beyond the wait. Their parent is the wait, turn, or session according to framework-established ownership.
+
+```text
+span_attributes: { name: "eou_wait", type: "task" }
+metrics.start: last speech end                 framework-reported or VAD-adjusted timestamp
+metrics.end: turn decision, resumed speech, or abandonment
+             observation cutoff when the outcome is unknown
+metadata["turn.id"]?: string                   owning user-turn span ID
+metadata["eou.outcome"]?: "committed" | "user_resumed" | "dropped"
+metadata["eou.end_reason"]?: string            final condition permitting commitment
+metadata["eou.speech_end_source"]?: "vad" | "stt" | "provider"
+metadata["audio.source_id"]?: string
+metadata["audio.participant_ids"]?: string[]
+metadata["contrib.<integration>.*"]?: ...      strategy, configured delays, detector diagnostics
+```
+
+**Example**
+
+The user pauses, continues, then finishes. A speculative response starts before the final decision.
+
+```text
+session [S] : task
+│
+├─ user_turn [UT1] : task                       1.0–4.0s
+│  │  metadata: { "turn.id": "UT1" }
+│  │  audio.selections: [1.0–3.5s]             speaking interval, including the pause
+│  ├─ user_speech [U1] : task                  1.0–2.0s
+│  ├─ eou_wait [E1] : task                     2.0–2.3s
+│  │  │  metadata: { "turn.id": "UT1", "eou.outcome": "user_resumed" }
+│  │  └─ livekit.eou_detection : task         2.1–2.5s
+│  │       # Detector execution extends beyond resumed speech at 2.3s.
+│  ├─ user_speech [U2] : task                  2.3–3.5s
+│  └─ eou_wait [E2] : task                     3.5–4.0s
+│       metadata: { "turn.id": "UT1", "eou.outcome": "committed" }
+│       audio.source_id: session-input
+│
+└─ llm_response [M1] : task                    3.7–4.5s
+     # Speculative generation overlaps E2; E2 ends at the turn decision.
+```
+
+An unfinished wait ends at the observation cutoff, with no known outcome or final commitment condition. Framework-specific termination metadata is optional.
+
+```text
+2.0s  speech ends
+2.2s  session shuts down before a decision
+
+eou_wait : task                              2.0–2.2s
+  eou.outcome: omitted
+  eou.end_reason: omitted
 ```
 
 ### `stt`
@@ -868,7 +937,7 @@ tts [TT1] : task    3.0–4.0s
 
 An integration-specific operation.
 
-They enrich traces with additional operational detail that may not otherwise be accurately represented by a common span. e.g. opening a connection or detecting when the user has finished speaking. It reflects the integrations’s native fields and values as `contrib.<integration>.*`.
+They enrich traces with additional operational detail, such as opening a connection or running a turn detector within `eou_wait`. Native fields and values belong under `contrib.<integration>.*`.
 
 ```text
 span_attributes: { name: <framework operation>, type: "task" }
@@ -903,7 +972,7 @@ Integrations emit the schema version they implement, independently of their SDK 
 **Example**
 
 ```js
-{ "audio.schema.version": "3.0.0" }
+{ "audio.schema.version": "3.1.0" }
 ```
 
 ### `audio.scope`
@@ -912,6 +981,62 @@ Integrations emit the schema version they implement, independently of their SDK 
 
 ```text
 metadata["audio.scope"]?: "session"
+```
+
+### `eou.outcome`
+
+How an `eou_wait` ended. Omitted when unknown; shutdown alone establishes neither commitment nor abandonment.
+
+```text
+metadata["eou.outcome"]?: "committed" | "user_resumed" | "dropped"
+```
+
+| Value | Meaning |
+| ----- | ------- |
+| `committed` | The framework accepted the user turn as complete. |
+| `user_resumed` | The user resumed speaking before commitment. |
+| `dropped` | The framework abandoned the wait without committing the turn. |
+
+### `eou.end_reason`
+
+For a `committed` wait, the final condition that permitted commitment. Omitted for other outcomes or when no single final condition is known.
+
+| Value | Meaning |
+| ----- | ------- |
+| `silence_timeout` | The required interval without user speech elapsed. |
+| `transcription_finalized` | The required final transcript became available. |
+| `turn_detector` | A turn detector accepted the utterance as complete. |
+| `provider_signal` | An external service declared the turn complete without exposing the deciding condition. |
+| `manual_commit` | An application explicitly committed the turn. |
+
+### `eou.speech_end_source`
+
+The origin of the speech-end timestamp used for `metrics.start`, independent of what triggered turn evaluation. Omit when the origin is unknown or ambiguous.
+
+| Value | Meaning |
+| ----- | ------- |
+| `vad` | A voice activity detector identified the end of speech. |
+| `stt` | A transcription service identified the end of speech. |
+| `provider` | Another audio-consuming service identified the end of speech. |
+
+Notification receipt time and transcript completion time are not speech-end timestamps.
+
+**Example**
+
+```text
+2.00s  VAD-reported speech end                 ← metrics.start
+2.30s  final transcript available
+2.50s  turn committed                         ← metrics.end
+
+eou_wait : task                                2.00–2.50s
+  metadata:
+    turn.id: UT1
+    audio.source_id: session-input
+    eou.outcome: committed
+    eou.speech_end_source: vad
+    contrib.<integration>.*: ...               native strategy, delays, scores
+
+# eou.end_reason omitted: no single final condition is known.
 ```
 
 ### `links`
@@ -1292,6 +1417,22 @@ support:
     java: "unknown"
     js: "yes"
     python: "yes"
+    ruby: "unknown"
+    rust: "unknown"
+  eou-wait-spans: # New common span; release support has not been assessed.
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  eou-wait-metadata: # Speech-end source and commitment condition; release support is unassessed.
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
     ruby: "unknown"
     rust: "unknown"
   transcription-spans:
