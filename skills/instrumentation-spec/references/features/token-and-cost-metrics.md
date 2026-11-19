@@ -29,6 +29,8 @@ All token counts MUST be non-negative integers. Omit a metric when the provider 
 | `prompt_cache_creation_tokens` | integer | SHOULD when reported | Aggregate prompt tokens written to a provider cache. These are a subset of `prompt_tokens`, not extra tokens. |
 | `prompt_cache_creation_5m_tokens` | integer | SHOULD when reported | Prompt cache-write tokens for a 5-minute TTL bucket. This is a breakdown or alternative representation of cache creation tokens, not an additional token class. |
 | `prompt_cache_creation_1h_tokens` | integer | SHOULD when reported | Prompt cache-write tokens for a 1-hour TTL bucket. This is a breakdown or alternative representation of cache creation tokens, not an additional token class. |
+| `prompt_cache_creation_30m_tokens` | integer | MUST when reported by OpenAI | Prompt cache-write tokens for a 30-minute TTL bucket; a subset of `prompt_tokens`. |
+| `prompt_cache_creation_12h_tokens` | integer | MUST when reported by OpenAI | Prompt cache-write tokens for a 12-hour TTL bucket; a subset of `prompt_tokens`. |
 | `completion_reasoning_tokens` | integer | MUST when reported | Tokens used for model reasoning. These are a subset of `completion_tokens`, usage diagnostics, and not separately costed by the current estimated-cost formula. |
 | `prompt_audio_tokens` | integer | SHOULD when reported | Input audio tokens. These are a subset of `prompt_tokens`, not additional tokens. |
 | `completion_audio_tokens` | integer | SHOULD when reported | Output audio tokens. These are a subset of `completion_tokens`, not additional tokens. |
@@ -54,6 +56,11 @@ data. Empty deltas, handshake messages, acknowledgements, usage-only events,
 and other control events do not satisfy `time_to_first_token`.
 
 Provider usage fields sometimes divide prompt or completion usage into additional categories. Those categories MUST be included in the canonical totals when the provider defines them as input or output usage. In particular, Google Gemini thoughts are included in `completion_tokens`, Google tool-use prompts are included in `prompt_tokens`, and Google's reported total is preserved as `tokens`; see [Google Gemini usage metadata](google-usage-metadata.md). SDKs MUST NOT invent custom metrics such as `tool_use_tokens` for provider-specific categories.
+
+OpenAI cache-write TTL fields follow [Prompt caching](prompt-cache.md#openai).
+They replace the aggregate cache-write metric when a split is reported. Backend
+pricing support for these fields is being added in SDK-811; the cost formula
+and query-output fields below describe the existing Anthropic 5m/1h support.
 
 ## Data required by insight
 

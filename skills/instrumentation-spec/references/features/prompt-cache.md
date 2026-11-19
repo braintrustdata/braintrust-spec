@@ -1,11 +1,13 @@
 # Prompt caching
 
-> **Providers:** Anthropic, AWS Bedrock
-> **Upstream references:** [Anthropic prompt caching docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), [Bedrock prompt caching docs](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)
+> **Providers:** Anthropic, AWS Bedrock, OpenAI
+> **Upstream references:** [Anthropic prompt caching docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), [Bedrock prompt caching docs](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html), [OpenAI prompt caching docs](https://developers.openai.com/api/docs/guides/prompt-caching)
 > **Conformance tests:**
 > - [`test/llm_span/anthropic/prompt_caching_5m.yaml`](../../test/llm_span/anthropic/prompt_caching_5m.yaml) — default 5m TTL, no beta header
 > - [`test/llm_span/anthropic/prompt_caching_1h.yaml`](../../test/llm_span/anthropic/prompt_caching_1h.yaml) — extended 1h TTL, requires `extended-cache-ttl-2025-04-11` beta
 > - [`test/llm_span/bedrock/prompt_caching.yaml`](../../test/llm_span/bedrock/prompt_caching.yaml) — Bedrock `cachePoint`, covering a cache write and a cache read
+> - `test/llm_span/openai/prompt_caching_30m.yaml` — 30m writes with a reported zero 12h bucket
+> - `test/llm_span/openai/prompt_caching_12h.yaml` — streamed 12h writes with a reported zero 30m bucket
 
 ## Overview
 
@@ -168,6 +170,48 @@ copies `inputTokens` straight into `prompt_tokens` reports 12 instead of 1187 �
 that flows directly into estimated cost, and which leaves the cache metrics larger than the total
 they are defined to be a subset of.
 
+## OpenAI
+
+GPT-5.6 and later report cache writes split by TTL. In the Responses API,
+`prompt_cache_options.ttl` selects `"30m"` (the default) or `"12h"`;
+`prompt_cache_breakpoint.ttl` can override that lifetime for a content block.
+Instrumentation MUST preserve caller-supplied cache options and breakpoints
+without adding or changing them.
+
+### Braintrust metric mapping
+
+Read these fields from `usage.input_tokens_details` (Responses) or
+`usage.prompt_tokens_details` (Chat Completions), when reported:
+
+| Braintrust metric | Source field |
+| --- | --- |
+| `prompt_cached_tokens` | `cached_tokens` |
+| `prompt_cache_creation_30m_tokens` | `cache_write_tokens_details.ttl_30m_tokens` |
+| `prompt_cache_creation_12h_tokens` | `cache_write_tokens_details.ttl_12h_tokens` |
+| `prompt_cache_creation_tokens` | `cache_write_tokens`, only when no TTL split is available |
+
+SDKs MUST emit reported TTL buckets, including explicit zeros, instead of the
+aggregate cache-write metric. Omit absent or null fields; do not infer writes
+or a TTL split from request options, cached reads, or prompt size. Older models
+that report only cached reads MUST NOT acquire fabricated cache-write metrics.
+
+These rules apply equally to non-streaming usage and final streaming usage.
+The two TTL buckets are disjoint and sum to `cache_write_tokens`. Cached reads
+exclude tokens billed as writes. A request can contain both TTLs, and upgrading
+30m coverage to 12h is a new 12h write rather than a cache read.
+
+### Totals and pricing
+
+Unlike Anthropic, OpenAI's `input_tokens` / `prompt_tokens` already includes
+uncached input, cache reads, and cache writes. Preserve that total as
+`prompt_tokens`; MUST NOT add the cache metrics to it. Preserve the provider's
+`total_tokens`, or compute `tokens` from input and output when no total is
+reported. Reasoning remains a subset of completion tokens.
+
+Cache-write rates replace the normal input rate; they are not surcharges.
+SDKs report usage, not a locally calculated cost. Backend support for the
+30m/12h metrics is tracked in SDK-811.
+
 ---
 
 ## Wire format
@@ -193,7 +237,7 @@ they are defined to be a subset of.
 id: prompt-cache
 name: Prompt caching
 category: Token & cost
-providers: ["anthropic", "bedrock"]
+providers: ["anthropic", "bedrock", "openai"]
 support:
   cache-token-metrics:
     dotnet: "no"
