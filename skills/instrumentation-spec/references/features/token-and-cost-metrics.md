@@ -31,6 +31,7 @@ All token counts MUST be non-negative integers. Omit a metric when the provider 
 | `prompt_cache_creation_1h_tokens` | integer | SHOULD when reported | Prompt cache-write tokens for a 1-hour TTL bucket. This is a breakdown or alternative representation of cache creation tokens, not an additional token class. |
 | `completion_reasoning_tokens` | integer | MUST when reported | Tokens used for model reasoning. These are a subset of `completion_tokens`, usage diagnostics, and not separately costed by the current estimated-cost formula. |
 | `prompt_audio_tokens` | integer | SHOULD when reported | Input audio tokens. These are a subset of `prompt_tokens`, not additional tokens. |
+| `prompt_cached_audio_tokens` | integer | SHOULD when reported | Input audio tokens read from cache. A subset of both `prompt_audio_tokens` and `prompt_cached_tokens`, not additional tokens. Omit when the provider does not report this intersection. |
 | `completion_audio_tokens` | integer | SHOULD when reported | Output audio tokens. These are a subset of `completion_tokens`, not additional tokens. |
 | `completion_image_tokens` | integer | SHOULD when reported | Output image tokens. These are a subset of `completion_tokens`, not additional tokens. |
 | `time_to_first_token` | number | MUST for streaming spans | For text output, seconds from request start to the first model-generated token or text chunk; for multimodal output, seconds to the first content-bearing output event. |
@@ -71,6 +72,7 @@ Braintrust can only compute or display an insight when the required data is pres
 | TTL-specific cache-write cost | `metrics.prompt_cache_creation_5m_tokens`, `metrics.prompt_cache_creation_1h_tokens`, `metadata.model`, `metadata.provider`, pricing with both split cache-write rates | If split rates or a complete split are unavailable, cost falls back to aggregate cache-write pricing. |
 | Reasoning usage | `metrics.completion_reasoning_tokens` | This is a subset of `completion_tokens`. Missing means the provider did not report reasoning tokens or the SDK did not capture them. |
 | Audio/image usage | `metrics.prompt_audio_tokens`, `metrics.completion_audio_tokens`, `metrics.completion_image_tokens` | Each detail is a subset of its prompt or completion total. Unsupported modality arrays remain provider metadata rather than custom metrics. |
+| Cached audio input | `metrics.prompt_cached_audio_tokens` | Identifies the overlap between input audio and cached input. Neither total alone establishes this count. |
 | Streaming latency | `metrics.time_to_first_token` | Required only for streaming spans. |
 | Estimated dollar cost | `metrics.estimated_cost`, or token metrics plus `metadata.model`, `metadata.provider`, and matching model/provider pricing | `estimated_cost` is the most authoritative per-span value. Token-derived cost is unavailable when pricing or token inputs are unavailable. |
 | Exclude scorer costs | `span_attributes.purpose = "scorer"` on scorer LLM spans | Braintrust estimated-cost functions exclude scorer spans. Omit this only when scorer cost should be counted with normal task cost. |
@@ -195,6 +197,14 @@ id: token-and-cost-metrics
 name: Token and cost metrics
 category: Token & cost
 support:
+  cached-audio-tokens: # New common metric; release support has not been assessed.
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
   prompt-completion-tokens:
     dotnet: "yes"
     go: "yes"

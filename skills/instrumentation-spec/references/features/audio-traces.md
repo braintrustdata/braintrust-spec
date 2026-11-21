@@ -1,6 +1,6 @@
 # Audio traces
 
-This document defines audio trace schema version `3.1.0` for voice conversations, covering both the conversation users experience and the operations that produce it.
+This document defines audio trace schema version `3.2.0` for voice conversations, covering both the conversation users experience and the operations that produce it.
 
 ## Overview
 
@@ -29,7 +29,7 @@ User     __________/|\|/|\|/|______________________________
 
 ```text
 session [S] : task                              0.0–5.0s
-│  audio.schema.version: "3.1.0"
+│  audio.schema.version: "3.2.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -89,7 +89,7 @@ User     __________/|\|/|\|/|______________________________
 
 ```text
 session [S] : task                              0.0–5.0s
-│  audio.schema.version: "3.1.0"
+│  audio.schema.version: "3.2.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -107,6 +107,10 @@ session [S] : task                              0.0–5.0s
 │  │  output: "It arrives Friday."
 │  │  links: uses_context → U1
 │  └─ livekit.llm_response [M1L] : llm         2.0–3.0s  # LiveKit owns the OpenAI Realtime client
+│       metadata.model / provider: "gpt-realtime" / "openai"
+│       metrics: { prompt_tokens: 1000, completion_tokens: 100, tokens: 1100,
+│                  prompt_audio_tokens: 800, prompt_cached_tokens: 600, prompt_cached_audio_tokens: 500 }
+│       metadata["contrib.livekit.cached_tokens"]: { audio_tokens: 500, text_tokens: 100 }
 ├─ tts [TT1] : task                            3.0–4.0s
 │  │  input: "It arrives Friday."
 │  │  links: generated_by → M1
@@ -122,6 +126,8 @@ session [S] : task                              0.0–5.0s
 [00:01.0] User:  Where is my order?              [TR1 via U1]
 [00:03.5] Agent: It arrives Friday.             [A1]
 ```
+
+The 500 cached audio tokens are included in both the 800 audio tokens and the 600 cached tokens, all within the 1,000 prompt tokens.
 
 ### Duplex
 
@@ -145,7 +151,7 @@ Overlap                    <---->  3–4s
 
 ```text
 session [S] : task                              0.0–10.0s
-│  audio.schema.version: "3.1.0"
+│  audio.schema.version: "3.2.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -207,13 +213,16 @@ In this example, framework turns group transcript events and can overlap. Speech
 
 ```text
 session [S] : task                              0.0–7.0s
-│  audio.schema.version: "3.1.0"
+│  audio.schema.version: "3.2.0"
 │  audio.sources: session-input, agent-output
 │  audio.segments: part-0 → call.ogg; session-input → channel 0, agent-output → channel 1
 │  audio.timeline.origin_unix_ms: shared session epoch
 │
 ├─ pipecat.live [L1] : llm                      0.1–6.5s
 │    audio.scope: "session"
+│    metadata.model / provider: "gpt-live-1" / "openai"
+│    metrics.usage_seconds: 6.25
+│    metadata["contrib.pipecat.live.usage"]: { seconds: 6.25, active_seconds: 5, paused_seconds: 1.25 }
 ├─ agent_speech [A1] : task                     1.0–2.0s
 │    audio.source_id: agent-output
 │    audio.selections: [1.0–2.0s]
@@ -234,6 +243,8 @@ session [S] : task                              0.0–7.0s
 │       output: [{ role: "user", content: "When does the store close?" }]
 ├─ llm_response [M1] : task                     3.7–4.4s
 │  └─ pipecat.live.backend_response [M1L] : llm 3.7–4.4s
+│       metadata.model / provider: <resolved backend model> / "openai"
+│       metrics: { prompt_tokens: 800, completion_tokens: 100, tokens: 900 }
 │       output: [{ role: "assistant", content: "We close at six." }]
 ├─ agent_turn [AT2] : task                      4.5–6.1s
 │  │  metadata: { "turn.id": "AT2" }
@@ -246,13 +257,15 @@ session [S] : task                              0.0–7.0s
      audio.selections: [4.6–6.2s]
 ```
 
+The Live service owns its metered seconds; the backend operation owns its tokens and model identity. Metered seconds need not equal the span duration.
+
 ## Trace specification
 
 The audio trace is rooted under a `session` span. This session span may be the root span, or it might be nested under another parent span.
 
 ```text
 session : task [1]
-│  metadata["audio.schema.version"]: "3.1.0"
+│  metadata["audio.schema.version"]: "3.2.0"
 │  metadata["audio.sources"]?: map<string, AudioSource>
 │  metadata["audio.participants"]?: map<string, AudioParticipant>
 │  metadata["audio.speakers"]?: map<string, AudioSpeaker>
@@ -366,7 +379,7 @@ The whole call, including recordings and the shared audio timeline.
 
 ```text
 span_attributes: { name: "session", type: "task" }
-metadata["audio.schema.version"]: "3.1.0"
+metadata["audio.schema.version"]: "3.2.0"
 metadata["audio.sources"]?: map<string, AudioSource>
 metadata["audio.participants"]?: map<string, AudioParticipant>
 metadata["audio.speakers"]?: map<string, AudioSpeaker>
@@ -381,7 +394,7 @@ A 75-second order-support call with two users sharing a microphone, captured as 
 ```js
 // Metadata on the session span; attachments live in its input.audio map.
 {
-  "audio.schema.version": "3.1.0",
+  "audio.schema.version": "3.2.0",
   "audio.sources": {
     "session-input": { label: "Agent input audio" },
     "agent-output": { label: "Agent audio" }
@@ -635,7 +648,8 @@ links?: transcribes → speech spans
   - When enabled, that integration emits its naturally named `llm` children.
   - When disabled, only the `stt` wrapper is emitted.
 - Else, if the framework uses its own client or exposes operation data, it MUST emit its own `llm` child, named with a `<framework>.` prefix and following the [Braintrust instrumentation guide](../instrumentation-guide.md).
-- The wrapper MUST NOT record token usage, cost, or model timing metrics. These belong on its `llm` children. The wrapper records its own start/end timing.
+- The wrapper records its own start/end timing, but MUST NOT record usage, cost, or model timing metrics. Each `llm` child owns its reported [metered seconds](#metricsusage_seconds) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`.
+- Each child MUST retain observed native usage and request/session IDs under `metadata["contrib.<integration>.*"]`, preserving names, units and structure.
 
 **Links**
 
@@ -728,20 +742,24 @@ Model execution across a session, such as a continuously listening/speaking dupl
 
 The span name is the provider integration's operation name, or `<framework>.<operation>` when the framework owns the model client (e.g. `pipecat.live`).
 
-This span is a child of `session` and owns that model's usage/cost. It requires neither `turn.id` nor an `llm_response` wrapper. Duplex models with only response-scoped execution use `llm_response` instead.
+This span is a child of `session`. It requires neither `turn.id` nor an `llm_response` wrapper. Duplex models with only response-scoped execution use `llm_response` instead.
+
+- It owns the model's reported [metered seconds](#metricsusage_seconds) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`. Separate backend operations own their usage; it MUST NOT be duplicated here or on the parent `session`.
+- It MUST retain observed native usage and request/session IDs under `metadata["contrib.<integration>.*"]`, preserving names, units and structure.
 
 ```text
 span_attributes: { name: <observed model operation>, type: "llm" }
 input / output?: observed model payloads
 metadata["audio.scope"]: "session"
-metadata.model / provider?: string
+metadata.model / provider: string
 metrics.start / end: model execution interval
-metrics: this model's usage and cost
+metrics.usage_seconds?: number                provider-reported metered duration
+metrics: this model's token usage and cost
 ```
 
 ### `llm_response`
 
-One model response, which can include text, audio, or tool requests. This span shows what went into the model and what came out. Speech spans show what was actually said.
+One model response, which can include text, audio, or tool requests. This span shows what went into the model and what came out. Speech spans show what was actually said. Reported model usage remains on its `llm` child even when the response is interrupted.
 
 ```text
 span_attributes: { name: "llm_response", type: "task" }
@@ -758,7 +776,8 @@ metrics.start / end: framework operation interval
   - When enabled, that integration emits its naturally named `llm` children which MUST follow the [Braintrust instrumentation guide](../instrumentation-guide.md).
   - When disabled, only the `llm_response` wrapper is emitted.
 - Else, if the framework uses its own client or exposes operation data, it MUST emit its own `llm` child, named with a `<framework>.` prefix and following the [Braintrust instrumentation guide](../instrumentation-guide.md).
-- The wrapper MUST NOT record token usage, cost, or model timing metrics. These belong on its `llm` children. The wrapper records its own start/end timing.
+- The wrapper records its own start/end timing, but MUST NOT record usage, cost, or model timing metrics. Each `llm` child owns its reported [metered seconds](#metricsusage_seconds) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`.
+- Each child MUST retain observed native usage and request/session IDs under `metadata["contrib.<integration>.*"]`, preserving names, units and structure.
 
 **Links**
 
@@ -866,7 +885,7 @@ get_price [T1] : tool    7.2–7.4s
 
 A text-to-speech operation.
 
-It represents the generation of the audio from text, whereas `agent_speech` represents actual audio playback. May identify the voice used for synthesis with `audio.speaker_ids`.
+It represents the generation of the audio from text, whereas `agent_speech` represents actual audio playback. May identify the voice used for synthesis with `audio.speaker_ids`. Reported synthesis usage remains on its `llm` child even when the audio is not played.
 
 ```text
 span_attributes: { name: "tts", type: "task" }
@@ -884,7 +903,8 @@ metadata.model / provider?: string            observed synthesis service
   - When enabled, that integration emits its naturally named `llm` children.
   - When disabled, only the `tts` wrapper is emitted.
 - Else, if the framework uses its own client or exposes operation data, it MUST emit its own `llm` child, named with a `<framework>.` prefix and following the [Braintrust instrumentation guide](../instrumentation-guide.md).
-- The wrapper MUST NOT record token usage, cost, or model timing metrics. These belong on its `llm` children. The wrapper records its own start/end timing.
+- The wrapper records its own start/end timing, but MUST NOT record usage, cost, or model timing metrics. Each `llm` child owns its reported [metered seconds](#metricsusage_seconds) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`.
+- Each child MUST retain observed native usage and request/session IDs under `metadata["contrib.<integration>.*"]`, preserving names, units and structure.
 
 **Links**
 
@@ -972,7 +992,7 @@ Integrations emit the schema version they implement, independently of their SDK 
 **Example**
 
 ```js
-{ "audio.schema.version": "3.1.0" }
+{ "audio.schema.version": "3.2.0" }
 ```
 
 ### `audio.scope`
@@ -982,6 +1002,31 @@ Integrations emit the schema version they implement, independently of their SDK 
 ```text
 metadata["audio.scope"]?: "session"
 ```
+
+### `metrics.usage_seconds`
+
+Provider-reported metered duration for the owning model/service operation, in seconds.
+
+```text
+metrics.usage_seconds?: number                  // Finite, nonnegative; fractional seconds allowed
+```
+
+- Required when reported, including zero; omitted when unavailable. Span duration and recorded audio length are not substitutes.
+- Unit conversion preserves the reported quantity, without additional rounding or billing adjustments.
+- The value is cumulative for the owning operation: later totals replace earlier ones. Final reports, including late reports, belong to the same span.
+- Provider-specific breakdowns, such as active/paused seconds, remain in `contrib.<integration>.*` metadata.
+
+### `metrics.prompt_cached_audio_tokens`
+
+Input audio tokens read from cache, following the shared [token metric definition](token-and-cost-metrics.md#canonical-metrics).
+
+```text
+metrics.prompt_cached_audio_tokens?: integer    // Nonnegative; only when the intersection is reported
+```
+
+- A subset of both `prompt_audio_tokens` and `prompt_cached_tokens`, not additional tokens.
+- Preserve reported zero; omit when unavailable. The audio and cached totals alone do not establish their intersection.
+- The value is cumulative for the owning operation: later totals replace earlier ones. Final reports, including late reports, belong to the same span.
 
 ### `eou.outcome`
 
@@ -1395,6 +1440,22 @@ id: audio-traces
 name: Audio traces
 category: Multimodal
 support:
+  metered-duration: # New in 3.2.0; release support has not been assessed.
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  native-usage-metadata: # Native usage preservation; release support has not been assessed.
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
   session-spans:
     dotnet: "unknown"
     go: "unknown"
