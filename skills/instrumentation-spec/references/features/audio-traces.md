@@ -755,6 +755,7 @@ metadata.model / provider: string
 metadata["contrib.<integration>.*"]?: ...      native usage and request/session IDs
 metrics.start / end: model execution interval
 metrics.usage_seconds?: number                 provider-reported metered duration in seconds
+metrics.usage_standby_seconds?: number         provider-reported standby portion in seconds
 metrics: this model's token usage and cost
 ```
 
@@ -988,6 +989,14 @@ metrics.usage_seconds?: number                 // Finite and nonnegative. Fracti
 - Convert other reported time units to seconds without additional rounding or billing adjustments. Preserve native usage and its breakdowns under `metadata["contrib.<integration>.*"]`.
 - For cumulative reports, later totals replace earlier ones. Final reports, including late reports, belong to the same span.
 - If the integration computes the dollar cost from metered duration, record it in `metrics.estimated_cost`.
+
+#### `metrics.usage_standby_seconds`
+
+The portion of `metrics.usage_seconds` billed at the provider's standby rate (idle or paused). It is already included in the total: active duration is `usage_seconds - usage_standby_seconds`. The value is finite and nonnegative; fractional seconds are allowed.
+
+Instrumentation MUST record it on the same `llm` span as `metrics.usage_seconds` when the provider reports the breakdown. Preserve reported zero and omit the metric when unavailable rather than deriving it. For cumulative reports, later standby totals replace earlier ones.
+
+For example, OpenAI GPT-Live reports `SessionUsage.paused_seconds` in `session.usage.updated` and `session.closed` for eligible WebRTC sessions. OpenAI pricing calls this the "Standby" rate.
 
 ### Audio token metrics
 
@@ -1450,6 +1459,14 @@ name: Audio traces
 category: Multimodal
 support:
   metered-duration: # Shared metrics.usage_seconds field. Release support has not been assessed.
+    dotnet: "unknown"
+    go: "unknown"
+    java: "unknown"
+    js: "unknown"
+    python: "unknown"
+    ruby: "unknown"
+    rust: "unknown"
+  standby-duration: # Shared metrics.usage_standby_seconds field. Release support has not been assessed.
     dotnet: "unknown"
     go: "unknown"
     java: "unknown"
