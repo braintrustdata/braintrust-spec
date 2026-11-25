@@ -1,6 +1,6 @@
 # Audio traces
 
-This document defines audio trace schema version `4.0.0` for voice conversations, covering both the conversation users experience and the operations that produce it.
+This document defines audio trace schema version `3.2.0` for voice conversations, covering both the conversation users experience and the operations that produce it.
 
 ## Overview
 
@@ -29,7 +29,7 @@ User     __________/|\|/|\|/|______________________________
 
 ```text
 session [S] : task                              0.0–5.0s
-│  audio.schema.version: "4.0.0"
+│  audio.schema.version: "3.2.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -89,7 +89,7 @@ User     __________/|\|/|\|/|______________________________
 
 ```text
 session [S] : task                              0.0–5.0s
-│  audio.schema.version: "4.0.0"
+│  audio.schema.version: "3.2.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -151,7 +151,7 @@ Overlap                    <---->  3–4s
 
 ```text
 session [S] : task                              0.0–10.0s
-│  audio.schema.version: "4.0.0"
+│  audio.schema.version: "3.2.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -213,7 +213,7 @@ In this example, framework turns group transcript events and can overlap. Speech
 
 ```text
 session [S] : task                              0.0–7.0s
-│  audio.schema.version: "4.0.0"
+│  audio.schema.version: "3.2.0"
 │  audio.sources: session-input, agent-output
 │  audio.segments: part-0 → call.ogg; session-input → channel 0, agent-output → channel 1
 │  audio.timeline.origin_unix_ms: shared session epoch
@@ -264,7 +264,7 @@ The audio trace is rooted under a `session` span. This session span may be the r
 
 ```text
 session : task [1]
-│  metadata["audio.schema.version"]: "4.0.0"
+│  metadata["audio.schema.version"]: "3.2.0"
 │  metadata["audio.sources"]?: map<string, AudioSource>
 │  metadata["audio.participants"]?: map<string, AudioParticipant>
 │  metadata["audio.speakers"]?: map<string, AudioSpeaker>
@@ -378,7 +378,7 @@ The whole call, including recordings and the shared audio timeline.
 
 ```text
 span_attributes: { name: "session", type: "task" }
-metadata["audio.schema.version"]: "4.0.0"
+metadata["audio.schema.version"]: "3.2.0"
 metadata["audio.sources"]?: map<string, AudioSource>
 metadata["audio.participants"]?: map<string, AudioParticipant>
 metadata["audio.speakers"]?: map<string, AudioSpeaker>
@@ -393,7 +393,7 @@ A 75-second order-support call with two users sharing a microphone, captured as 
 ```js
 // Metadata on the session span; attachments live in its input.audio map.
 {
-  "audio.schema.version": "4.0.0",
+  "audio.schema.version": "3.2.0",
   "audio.sources": {
     "session-input": { label: "Agent input audio" },
     "agent-output": { label: "Agent audio" }
@@ -1019,7 +1019,7 @@ Integrations emit the schema version they implement, independently of their SDK 
 **Example**
 
 ```js
-{ "audio.schema.version": "4.0.0" }
+{ "audio.schema.version": "3.2.0" }
 ```
 
 ### `audio.scope`
