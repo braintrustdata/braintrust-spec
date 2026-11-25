@@ -1210,6 +1210,7 @@ Instrumentation MUST only emit the metric keys listed in this guide. The followi
 | `completion_audio_tokens`         | number | Audio models     | SHOULD   | Output audio tokens reported by provider; subset of completion usage |
 | `completion_image_tokens`         | number | Image models     | SHOULD   | Output image tokens reported by provider; subset of completion usage |
 | `usage_seconds`                    | number | LLM spans        | MUST when reported | Provider-reported metered duration in seconds |
+| `usage_standby_seconds`            | number | LLM spans        | MUST when reported | Provider-reported standby duration in seconds, included in metered duration |
 | `estimated_cost`                  | number | LLM spans        | MAY      | Explicit per-span total estimated cost in dollars |
 
 \* Usage metrics MUST be captured when the provider reports them or the SDK can
