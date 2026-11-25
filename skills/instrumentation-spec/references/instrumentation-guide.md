@@ -1160,6 +1160,9 @@ MUST NOT record token usage, cost, or model timing metrics; they record their
 own start/end timing. These audio-specific span rules take precedence over
 the generic framework span structures below for voice-framework operations.
 
+Record provider-reported metered duration in `metadata.usage_seconds` on the
+`llm` span for the operation that incurred it. See the [metered duration specification](features/audio-traces.md#metered-duration).
+
 ### Completion-style frameworks
 
 Frameworks that expose a completion-style API (single call, no internal tool loop) — such as LiteLLM — MUST produce spans identical to direct provider calls:
@@ -1203,6 +1206,7 @@ Instrumentation MUST only emit the metric keys listed in this guide. The followi
 | `prompt_cache_creation_5m_tokens` | number | Cached responses | SHOULD   | Cache-write tokens for 5-minute TTL entries      |
 | `prompt_cache_creation_1h_tokens` | number | Cached responses | SHOULD   | Cache-write tokens for 1-hour TTL entries        |
 | `prompt_audio_tokens`             | number | Audio models     | SHOULD   | Input audio tokens reported by provider; subset of prompt usage |
+| `prompt_cached_audio_tokens`      | number | Audio models     | SHOULD   | Reported cached input audio tokens; subset of both audio and cached prompt usage |
 | `completion_audio_tokens`         | number | Audio models     | SHOULD   | Output audio tokens reported by provider; subset of completion usage |
 | `completion_image_tokens`         | number | Image models     | SHOULD   | Output image tokens reported by provider; subset of completion usage |
 | `estimated_cost`                  | number | LLM spans        | MAY      | Explicit per-span total estimated cost in dollars |
