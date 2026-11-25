@@ -1160,6 +1160,9 @@ MUST NOT record token usage, cost, or model timing metrics; they record their
 own start/end timing. These audio-specific span rules take precedence over
 the generic framework span structures below for voice-framework operations.
 
+Record provider-reported metered duration in `metadata.usage_seconds` on the
+`llm` span for the operation that incurred it. See the [metered duration specification](features/audio-traces.md#metered-duration).
+
 ### Completion-style frameworks
 
 Frameworks that expose a completion-style API (single call, no internal tool loop) — such as LiteLLM — MUST produce spans identical to direct provider calls:

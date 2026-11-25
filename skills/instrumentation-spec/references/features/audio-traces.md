@@ -221,7 +221,7 @@ session [S] : task                              0.0–7.0s
 ├─ pipecat.live [L1] : llm                      0.1–6.5s
 │    audio.scope: "session"
 │    metadata.model / provider: "gpt-live-1" / "openai"
-│    metadata["contrib.pipecat.live.usage_seconds"]: 6.25
+│    metadata.usage_seconds: 6.25
 ├─ agent_speech [A1] : task                     1.0–2.0s
 │    audio.source_id: agent-output
 │    audio.selections: [1.0–2.0s]
@@ -751,7 +751,8 @@ span_attributes: { name: <observed model operation>, type: "llm" }
 input / output?: observed model payloads
 metadata["audio.scope"]: "session"
 metadata.model / provider: string
-metadata["contrib.<integration>.*"]?: ...      provider-reported usage, including metered duration
+metadata.usage_seconds?: number               provider-reported metered duration in seconds
+metadata["contrib.<integration>.*"]?: ...      native usage and request/session IDs
 metrics.start / end: model execution interval
 metrics: this model's token usage and cost
 ```
@@ -1004,13 +1005,14 @@ metadata["audio.scope"]?: "session"
 
 ### Metered duration
 
-Record provider-reported metered duration under `metadata["contrib.<integration>.*"]` on the `llm` span for the operation that incurred it. Preserve the reported units, fractional values, and any breakdowns. Pipecat records billed seconds as follows.
+`metadata.usage_seconds` is the shared field for provider-reported metered duration in seconds. Instrumentation MUST record it when reported on the `llm` span for the operation that incurred it.
 
 ```text
-metadata["contrib.pipecat.live.usage_seconds"]: 6.25
+metadata.usage_seconds?: number                // Finite and nonnegative. Fractional seconds are allowed.
 ```
 
 - Preserve reported zero and omit metered duration when unavailable. Span duration and recorded audio length measure different quantities.
+- Convert other reported time units to seconds without additional rounding or billing adjustments. Preserve native usage and its breakdowns under `metadata["contrib.<integration>.*"]`.
 - For cumulative reports, later totals replace earlier ones. Final reports, including late reports, belong to the same span.
 - If the integration computes the dollar cost from metered duration, record it in `metrics.estimated_cost`.
 
@@ -1438,7 +1440,7 @@ id: audio-traces
 name: Audio traces
 category: Multimodal
 support:
-  metered-duration: # Metered duration in integration metadata. Release support has not been assessed.
+  metered-duration: # Shared metadata.usage_seconds field. Release support has not been assessed.
     dotnet: "unknown"
     go: "unknown"
     java: "unknown"
