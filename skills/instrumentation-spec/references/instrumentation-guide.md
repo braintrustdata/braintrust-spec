@@ -1206,7 +1206,6 @@ Instrumentation MUST only emit the metric keys listed in this guide. The followi
 | `prompt_cached_audio_tokens`      | number | Audio models     | SHOULD   | Reported cached input audio tokens; subset of both audio and cached prompt usage |
 | `completion_audio_tokens`         | number | Audio models     | SHOULD   | Output audio tokens reported by provider; subset of completion usage |
 | `completion_image_tokens`         | number | Image models     | SHOULD   | Output image tokens reported by provider; subset of completion usage |
-| `usage_seconds`                   | number | Audio model/service spans | MUST when reported | Provider-reported metered seconds, including fractional values; see [Audio traces](features/audio-traces.md#metricsusage_seconds) |
 | `estimated_cost`                  | number | LLM spans        | MAY      | Explicit per-span total estimated cost in dollars |
 
 \* Usage metrics MUST be captured when the provider reports them or the SDK can

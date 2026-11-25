@@ -221,8 +221,7 @@ session [S] : task                              0.0–7.0s
 ├─ pipecat.live [L1] : llm                      0.1–6.5s
 │    audio.scope: "session"
 │    metadata.model / provider: "gpt-live-1" / "openai"
-│    metrics.usage_seconds: 6.25
-│    metadata["contrib.pipecat.live.usage"]: { seconds: 6.25, active_seconds: 5, paused_seconds: 1.25 }
+│    metadata["contrib.pipecat.live.usage_seconds"]: 6.25
 ├─ agent_speech [A1] : task                     1.0–2.0s
 │    audio.source_id: agent-output
 │    audio.selections: [1.0–2.0s]
@@ -648,7 +647,7 @@ links?: transcribes → speech spans
   - When enabled, that integration emits its naturally named `llm` children.
   - When disabled, only the `stt` wrapper is emitted.
 - Else, if the framework uses its own client or exposes operation data, it MUST emit its own `llm` child, named with a `<framework>.` prefix and following the [Braintrust instrumentation guide](../instrumentation-guide.md).
-- The wrapper records its own start/end timing, but MUST NOT record usage, cost, or model timing metrics. Each `llm` child owns its reported [metered seconds](#metricsusage_seconds) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`.
+- The wrapper records its own start/end timing, but MUST NOT record usage, cost, or model timing metrics. Each `llm` child owns its reported [metered duration](#metered-duration) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`.
 - Each child MUST retain observed native usage and request/session IDs under `metadata["contrib.<integration>.*"]`, preserving names, units and structure.
 
 **Links**
@@ -744,7 +743,7 @@ The span name is the provider integration's operation name, or `<framework>.<ope
 
 This span is a child of `session`. It requires neither `turn.id` nor an `llm_response` wrapper. Duplex models with only response-scoped execution use `llm_response` instead.
 
-- It owns the model's reported [metered seconds](#metricsusage_seconds) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`. Separate backend operations own their usage; it MUST NOT be duplicated here or on the parent `session`.
+- It owns the model's reported [metered duration](#metered-duration) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`. Separate backend operations own their usage; it MUST NOT be duplicated here or on the parent `session`.
 - It MUST retain observed native usage and request/session IDs under `metadata["contrib.<integration>.*"]`, preserving names, units and structure.
 
 ```text
@@ -752,8 +751,8 @@ span_attributes: { name: <observed model operation>, type: "llm" }
 input / output?: observed model payloads
 metadata["audio.scope"]: "session"
 metadata.model / provider: string
+metadata["contrib.<integration>.*"]?: ...      provider-reported usage, including metered duration
 metrics.start / end: model execution interval
-metrics.usage_seconds?: number                provider-reported metered duration
 metrics: this model's token usage and cost
 ```
 
@@ -776,7 +775,7 @@ metrics.start / end: framework operation interval
   - When enabled, that integration emits its naturally named `llm` children which MUST follow the [Braintrust instrumentation guide](../instrumentation-guide.md).
   - When disabled, only the `llm_response` wrapper is emitted.
 - Else, if the framework uses its own client or exposes operation data, it MUST emit its own `llm` child, named with a `<framework>.` prefix and following the [Braintrust instrumentation guide](../instrumentation-guide.md).
-- The wrapper records its own start/end timing, but MUST NOT record usage, cost, or model timing metrics. Each `llm` child owns its reported [metered seconds](#metricsusage_seconds) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`.
+- The wrapper records its own start/end timing, but MUST NOT record usage, cost, or model timing metrics. Each `llm` child owns its reported [metered duration](#metered-duration) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`.
 - Each child MUST retain observed native usage and request/session IDs under `metadata["contrib.<integration>.*"]`, preserving names, units and structure.
 
 **Links**
@@ -903,7 +902,7 @@ metadata.model / provider?: string            observed synthesis service
   - When enabled, that integration emits its naturally named `llm` children.
   - When disabled, only the `tts` wrapper is emitted.
 - Else, if the framework uses its own client or exposes operation data, it MUST emit its own `llm` child, named with a `<framework>.` prefix and following the [Braintrust instrumentation guide](../instrumentation-guide.md).
-- The wrapper records its own start/end timing, but MUST NOT record usage, cost, or model timing metrics. Each `llm` child owns its reported [metered seconds](#metricsusage_seconds) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`.
+- The wrapper records its own start/end timing, but MUST NOT record usage, cost, or model timing metrics. Each `llm` child owns its reported [metered duration](#metered-duration) and [token metrics](token-and-cost-metrics.md), with its own `metadata.model` and `metadata.provider`.
 - Each child MUST retain observed native usage and request/session IDs under `metadata["contrib.<integration>.*"]`, preserving names, units and structure.
 
 **Links**
@@ -1003,18 +1002,17 @@ Integrations emit the schema version they implement, independently of their SDK 
 metadata["audio.scope"]?: "session"
 ```
 
-### `metrics.usage_seconds`
+### Metered duration
 
-Provider-reported metered duration for the owning model/service operation, in seconds.
+Record provider-reported metered duration under `metadata["contrib.<integration>.*"]` on the `llm` span for the operation that incurred it. Preserve the reported units, fractional values, and any breakdowns. Pipecat records billed seconds as follows.
 
 ```text
-metrics.usage_seconds?: number                  // Finite, nonnegative; fractional seconds allowed
+metadata["contrib.pipecat.live.usage_seconds"]: 6.25
 ```
 
-- Required when reported, including zero; omitted when unavailable. Span duration and recorded audio length are not substitutes.
-- Unit conversion preserves the reported quantity, without additional rounding or billing adjustments.
-- The value is cumulative for the owning operation: later totals replace earlier ones. Final reports, including late reports, belong to the same span.
-- Provider-specific breakdowns, such as active/paused seconds, remain in `contrib.<integration>.*` metadata.
+- Preserve reported zero and omit metered duration when unavailable. Span duration and recorded audio length measure different quantities.
+- For cumulative reports, later totals replace earlier ones. Final reports, including late reports, belong to the same span.
+- If the integration computes the dollar cost from metered duration, record it in `metrics.estimated_cost`.
 
 ### `metrics.prompt_cached_audio_tokens`
 
@@ -1440,7 +1438,7 @@ id: audio-traces
 name: Audio traces
 category: Multimodal
 support:
-  metered-duration: # New in 3.2.0; release support has not been assessed.
+  metered-duration: # Metered duration in integration metadata. Release support has not been assessed.
     dotnet: "unknown"
     go: "unknown"
     java: "unknown"
