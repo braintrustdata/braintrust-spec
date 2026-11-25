@@ -1160,7 +1160,7 @@ MUST NOT record token usage, cost, or model timing metrics; they record their
 own start/end timing. These audio-specific span rules take precedence over
 the generic framework span structures below for voice-framework operations.
 
-Record provider-reported metered duration in `metadata.usage_seconds` on the
+Record provider-reported metered duration in `metrics.usage_seconds` on the
 `llm` span for the operation that incurred it. See the [metered duration specification](features/audio-traces.md#metered-duration).
 
 ### Completion-style frameworks
@@ -1209,6 +1209,7 @@ Instrumentation MUST only emit the metric keys listed in this guide. The followi
 | `prompt_cached_audio_tokens`      | number | Audio models     | SHOULD   | Reported cached input audio tokens; subset of both audio and cached prompt usage |
 | `completion_audio_tokens`         | number | Audio models     | SHOULD   | Output audio tokens reported by provider; subset of completion usage |
 | `completion_image_tokens`         | number | Image models     | SHOULD   | Output image tokens reported by provider; subset of completion usage |
+| `usage_seconds`                    | number | LLM spans        | MUST when reported | Provider-reported metered duration in seconds |
 | `estimated_cost`                  | number | LLM spans        | MAY      | Explicit per-span total estimated cost in dollars |
 
 \* Usage metrics MUST be captured when the provider reports them or the SDK can

@@ -35,6 +35,7 @@ All token counts MUST be non-negative integers. Omit a metric when the provider 
 | `completion_audio_tokens` | integer | SHOULD when reported | Output audio tokens. These are a subset of `completion_tokens`, not additional tokens. |
 | `completion_image_tokens` | integer | SHOULD when reported | Output image tokens. These are a subset of `completion_tokens`, not additional tokens. |
 | `time_to_first_token` | number | MUST for streaming spans | For text output, seconds from request start to the first model-generated token or text chunk; for multimodal output, seconds to the first content-bearing output event. |
+| `usage_seconds` | number | MUST when reported | Finite, nonnegative provider-reported metered duration in seconds on the owning LLM span. See [Metered duration](audio-traces.md#metered-duration). |
 | `estimated_cost` | number | MAY | Explicit per-span total cost override in dollars. Must be finite. |
 
 `input_tokens`, `output_tokens`, and `total_tokens` are accepted by some OpenTelemetry ingestion adapters and normalized to `prompt_tokens`, `completion_tokens`, and `tokens`. SDKs emitting Braintrust-native metrics MUST use the canonical Braintrust names directly.

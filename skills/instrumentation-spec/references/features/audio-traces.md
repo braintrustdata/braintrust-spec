@@ -1,6 +1,6 @@
 # Audio traces
 
-This document defines audio trace schema version `3.2.0` for voice conversations, covering both the conversation users experience and the operations that produce it.
+This document defines audio trace schema version `4.0.0` for voice conversations, covering both the conversation users experience and the operations that produce it.
 
 ## Overview
 
@@ -29,7 +29,7 @@ User     __________/|\|/|\|/|______________________________
 
 ```text
 session [S] : task                              0.0–5.0s
-│  audio.schema.version: "3.2.0"
+│  audio.schema.version: "4.0.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -89,7 +89,7 @@ User     __________/|\|/|\|/|______________________________
 
 ```text
 session [S] : task                              0.0–5.0s
-│  audio.schema.version: "3.2.0"
+│  audio.schema.version: "4.0.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -151,7 +151,7 @@ Overlap                    <---->  3–4s
 
 ```text
 session [S] : task                              0.0–10.0s
-│  audio.schema.version: "3.2.0"
+│  audio.schema.version: "4.0.0"
 │  audio.sources: session-input, agent-output
 │  audio.participants: caller-connection (type: user), agent-connection (type: agent)
 │  audio.speakers: speaker-1 (type: user)
@@ -213,7 +213,7 @@ In this example, framework turns group transcript events and can overlap. Speech
 
 ```text
 session [S] : task                              0.0–7.0s
-│  audio.schema.version: "3.2.0"
+│  audio.schema.version: "4.0.0"
 │  audio.sources: session-input, agent-output
 │  audio.segments: part-0 → call.ogg; session-input → channel 0, agent-output → channel 1
 │  audio.timeline.origin_unix_ms: shared session epoch
@@ -221,7 +221,7 @@ session [S] : task                              0.0–7.0s
 ├─ pipecat.live [L1] : llm                      0.1–6.5s
 │    audio.scope: "session"
 │    metadata.model / provider: "gpt-live-1" / "openai"
-│    metadata.usage_seconds: 6.25
+│    metrics.usage_seconds: 6.25
 ├─ agent_speech [A1] : task                     1.0–2.0s
 │    audio.source_id: agent-output
 │    audio.selections: [1.0–2.0s]
@@ -264,7 +264,7 @@ The audio trace is rooted under a `session` span. This session span may be the r
 
 ```text
 session : task [1]
-│  metadata["audio.schema.version"]: "3.2.0"
+│  metadata["audio.schema.version"]: "4.0.0"
 │  metadata["audio.sources"]?: map<string, AudioSource>
 │  metadata["audio.participants"]?: map<string, AudioParticipant>
 │  metadata["audio.speakers"]?: map<string, AudioSpeaker>
@@ -378,7 +378,7 @@ The whole call, including recordings and the shared audio timeline.
 
 ```text
 span_attributes: { name: "session", type: "task" }
-metadata["audio.schema.version"]: "3.2.0"
+metadata["audio.schema.version"]: "4.0.0"
 metadata["audio.sources"]?: map<string, AudioSource>
 metadata["audio.participants"]?: map<string, AudioParticipant>
 metadata["audio.speakers"]?: map<string, AudioSpeaker>
@@ -393,7 +393,7 @@ A 75-second order-support call with two users sharing a microphone, captured as 
 ```js
 // Metadata on the session span; attachments live in its input.audio map.
 {
-  "audio.schema.version": "3.2.0",
+  "audio.schema.version": "4.0.0",
   "audio.sources": {
     "session-input": { label: "Agent input audio" },
     "agent-output": { label: "Agent audio" }
@@ -751,9 +751,9 @@ span_attributes: { name: <observed model operation>, type: "llm" }
 input / output?: observed model payloads
 metadata["audio.scope"]: "session"
 metadata.model / provider: string
-metadata.usage_seconds?: number               provider-reported metered duration in seconds
 metadata["contrib.<integration>.*"]?: ...      native usage and request/session IDs
 metrics.start / end: model execution interval
+metrics.usage_seconds?: number                 provider-reported metered duration in seconds
 metrics: this model's token usage and cost
 ```
 
@@ -973,6 +973,33 @@ livekit.session_start [F1] : task    0.0–0.5s
   span_parents: ["S"]
 ```
 
+## Metrics specification
+
+### Metered duration
+
+`metrics.usage_seconds` is the shared metric for metered duration in seconds. When the provider reports a value, instrumentation MUST record it on the `llm` span for the operation that incurred it.
+
+```text
+metrics.usage_seconds?: number                 // Finite and nonnegative. Fractional seconds are allowed.
+```
+
+- Preserve reported zero and omit metered duration when unavailable. Span duration and recorded audio length measure different quantities.
+- Convert other reported time units to seconds without additional rounding or billing adjustments. Preserve native usage and its breakdowns under `metadata["contrib.<integration>.*"]`.
+- For cumulative reports, later totals replace earlier ones. Final reports, including late reports, belong to the same span.
+- If the integration computes the dollar cost from metered duration, record it in `metrics.estimated_cost`.
+
+### `metrics.prompt_cached_audio_tokens`
+
+Input audio tokens read from cache, following the shared [token metric definition](token-and-cost-metrics.md#canonical-metrics).
+
+```text
+metrics.prompt_cached_audio_tokens?: integer    // Nonnegative; only when the intersection is reported
+```
+
+- A subset of both `prompt_audio_tokens` and `prompt_cached_tokens`, not additional tokens.
+- Preserve reported zero; omit when unavailable. The audio and cached totals alone do not establish their intersection.
+- The value is cumulative for the owning operation: later totals replace earlier ones. Final reports, including late reports, belong to the same span.
+
 ## Metadata specification
 
 ### `audio.schema.version`
@@ -992,7 +1019,7 @@ Integrations emit the schema version they implement, independently of their SDK 
 **Example**
 
 ```js
-{ "audio.schema.version": "3.2.0" }
+{ "audio.schema.version": "4.0.0" }
 ```
 
 ### `audio.scope`
@@ -1002,31 +1029,6 @@ Integrations emit the schema version they implement, independently of their SDK 
 ```text
 metadata["audio.scope"]?: "session"
 ```
-
-### Metered duration
-
-`metadata.usage_seconds` is the shared field for provider-reported metered duration in seconds. Instrumentation MUST record it when reported on the `llm` span for the operation that incurred it.
-
-```text
-metadata.usage_seconds?: number                // Finite and nonnegative. Fractional seconds are allowed.
-```
-
-- Preserve reported zero and omit metered duration when unavailable. Span duration and recorded audio length measure different quantities.
-- Convert other reported time units to seconds without additional rounding or billing adjustments. Preserve native usage and its breakdowns under `metadata["contrib.<integration>.*"]`.
-- For cumulative reports, later totals replace earlier ones. Final reports, including late reports, belong to the same span.
-- If the integration computes the dollar cost from metered duration, record it in `metrics.estimated_cost`.
-
-### `metrics.prompt_cached_audio_tokens`
-
-Input audio tokens read from cache, following the shared [token metric definition](token-and-cost-metrics.md#canonical-metrics).
-
-```text
-metrics.prompt_cached_audio_tokens?: integer    // Nonnegative; only when the intersection is reported
-```
-
-- A subset of both `prompt_audio_tokens` and `prompt_cached_tokens`, not additional tokens.
-- Preserve reported zero; omit when unavailable. The audio and cached totals alone do not establish their intersection.
-- The value is cumulative for the owning operation: later totals replace earlier ones. Final reports, including late reports, belong to the same span.
 
 ### `eou.outcome`
 
@@ -1440,7 +1442,7 @@ id: audio-traces
 name: Audio traces
 category: Multimodal
 support:
-  metered-duration: # Shared metadata.usage_seconds field. Release support has not been assessed.
+  metered-duration: # Shared metrics.usage_seconds field. Release support has not been assessed.
     dotnet: "unknown"
     go: "unknown"
     java: "unknown"
