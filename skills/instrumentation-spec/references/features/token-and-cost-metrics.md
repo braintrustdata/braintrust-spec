@@ -200,13 +200,13 @@ name: Token and cost metrics
 category: Token & cost
 support:
   cached-audio-tokens: # New common metric; release support has not been assessed.
-    dotnet: "unknown"
-    go: "unknown"
-    java: "unknown"
-    js: "unknown"
+    dotnet: "no"
+    go: "no"
+    java: "no"
+    js: "no"
     python: "unknown"
-    ruby: "unknown"
-    rust: "unknown"
+    ruby: "no"
+    rust: "no"
   prompt-completion-tokens:
     dotnet: "yes"
     go: "yes"

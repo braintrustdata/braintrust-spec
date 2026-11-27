@@ -175,7 +175,7 @@ support:
     js: "yes"
     python: "yes"
     ruby: "no"
-    rust: "unknown"
+    rust: "no"
   served-service-tier:
     dotnet: "no"
     go: "no"
@@ -183,7 +183,7 @@ support:
     js: "yes"
     python: "yes"
     ruby: "no"
-    rust: "unknown"
+    rust: "no"
   streaming-service-tier:
     dotnet: "no"
     go: "no"
@@ -191,13 +191,13 @@ support:
     js: "yes"
     python: "yes"
     ruby: "no"
-    rust: "unknown"
+    rust: "no"
   otel-service-tier-metadata:
     dotnet: "no"
     go: "no"
-    java: "partial"
+    java: "no"
     js: "yes"
     python: "unknown"
     ruby: "no"
-    rust: "unknown"
+    rust: "no"
 ```
